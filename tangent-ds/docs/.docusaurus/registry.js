@@ -16,7 +16,6 @@ export default {
   "533a09ca": [() => import(/* webpackChunkName: "533a09ca" */ "@site/docs/tutorial-basics/create-a-blog-post.md"), "@site/docs/tutorial-basics/create-a-blog-post.md", require.resolveWeak("@site/docs/tutorial-basics/create-a-blog-post.md")],
   "59362658": [() => import(/* webpackChunkName: "59362658" */ "@site/blog/2021-08-01-mdx-blog-post.mdx"), "@site/blog/2021-08-01-mdx-blog-post.mdx", require.resolveWeak("@site/blog/2021-08-01-mdx-blog-post.mdx")],
   "5c868d36": [() => import(/* webpackChunkName: "5c868d36" */ "@site/docs/tutorial-basics/create-a-page.md"), "@site/docs/tutorial-basics/create-a-page.md", require.resolveWeak("@site/docs/tutorial-basics/create-a-page.md")],
-  "5e8c322a": [() => import(/* webpackChunkName: "5e8c322a" */ "@site/docs/api/index.md"), "@site/docs/api/index.md", require.resolveWeak("@site/docs/api/index.md")],
   "5e95c892": [() => import(/* webpackChunkName: "5e95c892" */ "@theme/DocsRoot"), "@theme/DocsRoot", require.resolveWeak("@theme/DocsRoot")],
   "5e9f5e1a": [() => import(/* webpackChunkName: "5e9f5e1a" */ "@generated/docusaurus.config"), "@generated/docusaurus.config", require.resolveWeak("@generated/docusaurus.config")],
   "621db11d": [() => import(/* webpackChunkName: "621db11d" */ "@theme/Blog/Pages/BlogAuthorsListPage"), "@theme/Blog/Pages/BlogAuthorsListPage", require.resolveWeak("@theme/Blog/Pages/BlogAuthorsListPage")],

@@ -79,22 +79,16 @@ export default [
   },
   {
     path: '/tangent-ds/docs',
-    component: ComponentCreator('/tangent-ds/docs', '6c4'),
+    component: ComponentCreator('/tangent-ds/docs', '68e'),
     routes: [
       {
         path: '/tangent-ds/docs',
-        component: ComponentCreator('/tangent-ds/docs', '6e4'),
+        component: ComponentCreator('/tangent-ds/docs', 'c44'),
         routes: [
           {
             path: '/tangent-ds/docs',
-            component: ComponentCreator('/tangent-ds/docs', '02f'),
+            component: ComponentCreator('/tangent-ds/docs', '2ad'),
             routes: [
-              {
-                path: '/tangent-ds/docs/api/',
-                component: ComponentCreator('/tangent-ds/docs/api/', '105'),
-                exact: true,
-                sidebar: "tutorialSidebar"
-              },
               {
                 path: '/tangent-ds/docs/category/tutorial---basics',
                 component: ComponentCreator('/tangent-ds/docs/category/tutorial---basics', 'c6a'),

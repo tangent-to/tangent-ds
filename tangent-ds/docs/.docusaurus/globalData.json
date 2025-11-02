@@ -11,11 +11,6 @@
           "mainDocId": "intro",
           "docs": [
             {
-              "id": "api/api",
-              "path": "/tangent-ds/docs/api/",
-              "sidebar": "tutorialSidebar"
-            },
-            {
               "id": "intro",
               "path": "/tangent-ds/docs/intro",
               "sidebar": "tutorialSidebar"

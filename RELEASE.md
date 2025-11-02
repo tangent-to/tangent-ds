@@ -59,7 +59,7 @@ npm version patch  # Bug fixes: 0.1.0 → 0.1.1
 npm version minor  # New features: 0.1.0 → 0.2.0
 npm version major  # Breaking changes: 0.1.0 → 1.0.0
 
-# This creates a git commit and tag automatically
+cd ..
 ```
 
 ### 3. Create and Push the Tag

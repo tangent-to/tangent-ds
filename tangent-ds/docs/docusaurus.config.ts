@@ -87,12 +87,13 @@ const config: Config = {
           position: 'left',
           label: 'Tutorial',
         },
-        {
-          type: 'doc',
-          docId: 'api',
-          position: 'left',
-          label: 'API',
-        },
+        // TODO: Re-enable when API docs are fixed
+        // {
+        //   type: 'doc',
+        //   docId: 'api',
+        //   position: 'left',
+        //   label: 'API',
+        // },
         {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: 'https://github.com/facebook/docusaurus',
