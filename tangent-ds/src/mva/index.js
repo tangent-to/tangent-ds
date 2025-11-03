@@ -11,15 +11,13 @@ import * as pca from './pca.js';
 import * as hca from './hca.js';
 import * as lda from './lda.js';
 import * as rda from './rda.js';
-// Temporarily disabled - causes performance issues in Observable
-// import * as cca from './cca.js';
+import * as cca from './cca.js';
 
 import PCA from './estimators/PCA.js';
 import { LDA } from './estimators/LDA.js';
 import HCA from './estimators/HCA.js';
 import RDA from './estimators/RDA.js';
-// Temporarily disabled - causes performance issues in Observable
-// import CCA from './estimators/CCA.js';
+import { CCA } from './estimators/CCA.js';
 
 export {
   // Functional namespaces
@@ -27,12 +25,12 @@ export {
   hca,
   lda,
   rda,
-  // cca,
+  cca,
 
   // Class-based estimators
   PCA,
   LDA,
   HCA,
   RDA,
-  // CCA
+  CCA
 };

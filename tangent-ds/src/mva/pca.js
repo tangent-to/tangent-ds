@@ -7,8 +7,12 @@
 import { svd, Matrix, toMatrix } from "../core/linalg.js";
 import { mean, stddev } from "../core/math.js";
 import { prepareX } from "../core/table.js";
-
-const EPSILON = 1e-10;
+import {
+  applyScalingToScores,
+  applyScalingToLoadings,
+  toScoreObjects,
+  toLoadingObjects
+} from "./scaling.js";
 
 /**
  * Standardize data (center and optionally scale)
@@ -289,60 +293,6 @@ export function cumulativeVariance(model) {
   return cumulative;
 }
 
-function applyScalingToScores({
-  base,
-  u,
-  singularValues = [],
-  scaling = 0,
-  sqrtNSamples = 1
-}) {
-  if (!Array.isArray(base) || base.length === 0) {
-    return [];
-  }
-
-  const nComponents = base[0]?.length || 0;
-
-  switch (scaling) {
-    case 1: {
-      const factor = sqrtNSamples > 0 ? 1 / sqrtNSamples : 1;
-      return base.map(row => row.map(val => val * factor));
-    }
-    case 2: {
-      if (Array.isArray(u) && u.length) {
-        return u.map(row => row.slice(0, nComponents));
-      }
-      return base.map(row =>
-        row.map((val, idx) => {
-          const sv = singularValues[idx] ?? 1;
-          return sv > EPSILON ? val / sv : 0;
-        })
-      );
-    }
-    default:
-      return base;
-  }
-}
-
-function applyScalingToLoadings({
-  components,
-  sqrtEigenvalues,
-  scaling = 0,
-  featureNames
-}) {
-  const p = components.length;
-  const variableNames = Array.isArray(featureNames) && featureNames.length === p
-    ? featureNames.slice()
-    : Array.from({ length: p }, (_, i) => `var${i + 1}`);
-
-  const scaledColumns = components.map((col, j) => {
-    const factor = scaling === 2 ? (sqrtEigenvalues[j] ?? 1) : 1;
-    return col.map((val) => val * factor);
-  });
-
-  const matrix = columnsToRows(scaledColumns);
-  return { matrix, variableNames };
-}
-
 function matrixToArray(matrix) {
   const rows = matrix.rows;
   const cols = matrix.columns;
@@ -355,41 +305,6 @@ function matrixToArray(matrix) {
     result.push(row);
   }
   return result;
-}
-
-function toScoreObjects(matrix, prefix) {
-  return matrix.map((row) => {
-    const entry = {};
-    row.forEach((val, idx) => {
-      entry[`${prefix}${idx + 1}`] = val;
-    });
-    return entry;
-  });
-}
-
-function toLoadingObjects(matrix, variableNames, prefix) {
-  return matrix.map((row, i) => {
-    const entry = { variable: variableNames[i] || `var${i + 1}` };
-    row.forEach((val, idx) => {
-      entry[`${prefix}${idx + 1}`] = val;
-    });
-    return entry;
-  });
-}
-
-function columnsToRows(columns) {
-  if (!columns.length) return [];
-  const rows = columns[0].length;
-  const cols = columns.length;
-  const matrix = [];
-  for (let i = 0; i < rows; i++) {
-    const row = [];
-    for (let j = 0; j < cols; j++) {
-      row.push(columns[j][i]);
-    }
-    matrix.push(row);
-  }
-  return matrix;
 }
 
 function deriveComponentsFromLoadings(loadings = []) {

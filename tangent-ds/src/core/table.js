@@ -266,12 +266,102 @@ export class OneHotEncoder {
     });
   }
 
-  fitTransform(values = []) {
-    this.fit(values);
-    return this.transform(values);
+  fitTransform(valuesOrOptions = []) {
+    // Declarative API: fitTransform({ data, columns })
+    if (valuesOrOptions && typeof valuesOrOptions === 'object' && !Array.isArray(valuesOrOptions)) {
+      if ('data' in valuesOrOptions || 'columns' in valuesOrOptions) {
+        return this._fitTransformDeclarative(valuesOrOptions);
+      }
+    }
+
+    // Array API: fitTransform(values)
+    this.fit(valuesOrOptions);
+    return this.transform(valuesOrOptions);
   }
 
+  /**
+   * Declarative API for fit
+   * @param {Object} options - { data, columns }
+   * @returns {OneHotEncoder} this
+   */
+  _fitDeclarative({ data, columns }) {
+    if (!columns) {
+      throw new Error('OneHotEncoder: columns parameter is required for declarative API');
+    }
+
+    const columnList = Array.isArray(columns) ? columns : [columns];
+    const rows = normalize(data);
+
+    // Store column configuration
+    this._columns = columnList;
+    this._encoders = new Map();
+
+    // Create an encoder for each column
+    for (const col of columnList) {
+      const encoder = new OneHotEncoder({ handleUnknown: this.handleUnknown });
+      const values = rows.map(row => row[col]);
+      encoder.fit(values);
+      this._encoders.set(col, encoder);
+    }
+
+    return this;
+  }
+
+  /**
+   * Declarative API for transform
+   * @param {Object} options - { data }
+   * @returns {Array<Object>} Array of objects with one-hot encoded columns
+   */
+  _transformDeclarative({ data }) {
+    if (!this._encoders) {
+      throw new Error('OneHotEncoder: must call fit before transform');
+    }
+
+    const rows = normalize(data);
+
+    return rows.map(row => {
+      const encoded = {};
+
+      for (const [col, encoder] of this._encoders.entries()) {
+        const value = row[col];
+        const oneHotVec = encoder.transform([value])[0];
+        const featureNames = encoder.getFeatureNames(`${col}_`);
+
+        // Add each one-hot feature as a separate property
+        featureNames.forEach((name, idx) => {
+          encoded[name] = oneHotVec[idx];
+        });
+      }
+
+      return encoded;
+    });
+  }
+
+  /**
+   * Declarative API for fitTransform
+   * @param {Object} options - { data, columns }
+   * @returns {Array<Object>} Array of objects with one-hot encoded columns
+   */
+  _fitTransformDeclarative(options) {
+    this._fitDeclarative(options);
+    return this._transformDeclarative({ data: options.data });
+  }
+
+  /**
+   * Get all feature names for declarative API
+   * @returns {Array<string>} All feature names across all columns
+   */
   getFeatureNames(prefix = "") {
+    // If using declarative API, return all feature names
+    if (this._encoders) {
+      const names = [];
+      for (const [col, encoder] of this._encoders.entries()) {
+        names.push(...encoder.getFeatureNames(`${col}_`));
+      }
+      return names;
+    }
+
+    // Original single-column API
     return this.categories_.map((c) => `${prefix}${c}`);
   }
 

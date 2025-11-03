@@ -4,8 +4,14 @@
  */
 
 import { svd, Matrix, solveLeastSquares, eig } from "../core/linalg.js";
-import { mean } from "../core/math.js";
+import { mean, stddev } from "../core/math.js";
 import { prepareXY } from "../core/table.js";
+import {
+  applyScalingToScores,
+  applyScalingToLoadings,
+  toScoreObjects,
+  toLoadingObjects
+} from "./scaling.js";
 
 function toNumericMatrix(X) {
   return X.map((row) => Array.isArray(row) ? row.map(Number) : [Number(row)]);
@@ -13,21 +19,30 @@ function toNumericMatrix(X) {
 
 export function fit(X, y, options = {}) {
   let featureNames = null;
+  let scale = options.scale !== undefined ? options.scale : false;
+  let scaling = options.scaling !== undefined ? options.scaling : 0;
 
   if (
     X && typeof X === "object" && !Array.isArray(X) &&
     ("X" in X) && ("y" in X) && ("data" in X)
   ) {
+    const opts = X; // Save original object before reassignment
     const prepared = prepareXY({
-      X: X.X,
-      y: X.y,
-      data: X.data,
-      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
+      X: opts.X,
+      y: opts.y,
+      data: opts.data,
+      omit_missing: opts.omit_missing !== undefined ? opts.omit_missing : true,
     });
     X = prepared.X;
     y = prepared.y;
     if (prepared.columnsX && prepared.columnsX.length) {
       featureNames = prepared.columnsX.map((name) => String(name));
+    }
+    if (opts.scale !== undefined) {
+      scale = opts.scale;
+    }
+    if (opts.scaling !== undefined) {
+      scaling = opts.scaling;
     }
   }
 
@@ -87,7 +102,22 @@ export function fit(X, y, options = {}) {
     overallMean.push(mean(col));
   }
 
-  const centered = data.map((row) => row.map((val, j) => val - overallMean[j]));
+  let centered = data.map((row) => row.map((val, j) => val - overallMean[j]));
+  let sds = null;
+
+  // Apply scaling if requested
+  if (scale) {
+    sds = [];
+    for (let j = 0; j < p; j++) {
+      const col = centered.map((row) => row[j]);
+      const sd = stddev(col, false); // population std
+      sds.push(sd);
+    }
+    centered = centered.map((row) =>
+      row.map((val, j) => sds[j] > 0 ? val / sds[j] : 0)
+    );
+  }
+
   const centeredMatrix = new Matrix(centered);
   const scaleFactor = 1 / Math.sqrt(Math.max(n - 1, 1));
   const scaledMatrix = centeredMatrix.clone().mul(scaleFactor);
@@ -218,14 +248,28 @@ export function fit(X, y, options = {}) {
  }
 
   const projectedMatrix = whitenedMatrix.mmul(selectedEigenvectors);
-  const projectedData = projectedMatrix.to2DArray();
-  const scores = projectedData.map((row, i) => {
+  const projectedDataBase = projectedMatrix.to2DArray();
+
+  // Apply scaling transformation to scores
+  const sqrtEigenvalues = sortedEigenvalues.map(v => v > 0 ? Math.sqrt(v) : 0);
+  const scaledScores = applyScalingToScores({
+    base: projectedDataBase,
+    u: null,
+    singularValues: sqrtEigenvalues,
+    scaling,
+    sqrtNSamples: Math.sqrt(Math.max(n - 1, 1))
+  });
+
+  const scores = scaledScores.map((row, i) => {
     const score = { class: y[i] };
     row.forEach((value, idx) => {
       score[`ld${idx + 1}`] = value;
     });
     return score;
   });
+
+  // Use scaled scores for downstream calculations
+  const projectedData = scaledScores;
 
   const classMeanScores = classIndices.map((indices) => {
     const meanVec = new Array(nComponents).fill(0);
@@ -254,19 +298,15 @@ export function fit(X, y, options = {}) {
     return stdVec;
   });
 
-  const loadings = [];
-  for (let i = 0; i < p; i++) {
-    const variableName = (featureNames && featureNames[i])
-      ? featureNames[i]
-      : (Array.isArray(options.featureNames) && options.featureNames[i])
-        ? String(options.featureNames[i])
-        : `var${i + 1}`;
-    const loading = { variable: variableName };
-    for (let j = 0; j < nComponents; j++) {
-      loading[`ld${j + 1}`] = discriminantAxes[j][i];
-    }
-    loadings.push(loading);
-  }
+  // Apply scaling transformation to loadings
+  const loadingsResult = applyScalingToLoadings({
+    components: discriminantAxes,
+    sqrtEigenvalues,
+    scaling,
+    featureNames: featureNames || (Array.isArray(options.featureNames) ? options.featureNames : null)
+  });
+
+  const loadings = toLoadingObjects(loadingsResult.matrix, loadingsResult.variableNames, 'ld');
 
   return {
     scores,

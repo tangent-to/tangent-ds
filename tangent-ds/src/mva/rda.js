@@ -7,6 +7,12 @@ import { toMatrix, solveLeastSquares, Matrix } from '../core/linalg.js';
 import * as pca from './pca.js';
 import { mean } from '../core/math.js';
 import { prepareX } from '../core/table.js';
+import {
+  applyScalingToScores,
+  applyScalingToLoadings,
+  toScoreObjects,
+  toLoadingObjects
+} from './scaling.js';
 
 /**
  * Fit RDA model
@@ -17,6 +23,7 @@ import { prepareX } from '../core/table.js';
  */
 export function fit(Y, X, options = {}) {
   let scale = options.scale ?? false;
+  let scaling = options.scaling ?? 0;
   let responseMatrix = Y;
   let predictorMatrix = X;
   let responseNames = Array.isArray(options.responseNames)
@@ -41,6 +48,7 @@ export function fit(Y, X, options = {}) {
     }
     const omitMissing = opts.omit_missing !== undefined ? opts.omit_missing : true;
     scale = opts.scale !== undefined ? opts.scale : scale;
+    scaling = opts.scaling !== undefined ? opts.scaling : scaling;
 
     const responseList = Array.isArray(responseCols) ? responseCols : [responseCols];
     const predictorList = Array.isArray(predictorCols) ? predictorCols : [predictorCols];
@@ -99,13 +107,27 @@ export function fit(Y, X, options = {}) {
     XMeans.push(mean(col));
   }
 
-  const YCentered = responseData.map(row =>
+  let YCentered = responseData.map(row =>
     row.map((val, j) => val - YMeans[j])
   );
 
   const XCentered = explData.map(row =>
     row.map((val, j) => val - XMeans[j])
   );
+
+  // Apply scaling to Y if requested
+  let YSds = null;
+  if (scale) {
+    YSds = [];
+    for (let j = 0; j < q; j++) {
+      const col = YCentered.map(row => row[j]);
+      const sd = col.reduce((sum, val) => sum + val * val, 0) / n;
+      YSds.push(Math.sqrt(sd));
+    }
+    YCentered = YCentered.map(row =>
+      row.map((val, j) => YSds[j] > 0 ? val / YSds[j] : 0)
+    );
+  }
 
   const YFitted = [];
   const YResiduals = [];
@@ -146,8 +168,9 @@ export function fit(Y, X, options = {}) {
   }
 
   const pcaModel = pca.fit(fittedMatrix, {
-    scale,
+    scale: false,  // Y is already scaled if needed
     center: false,
+    scaling,  // Pass scaling parameter through
     columns: responseNames || undefined,
   });
 
@@ -191,9 +214,48 @@ export function fit(Y, X, options = {}) {
 
   const constrainedVariance = explainedInertia / totalInertia;
 
+  // Compute predictor correlations with canonical axes (for triplot)
+  const nAxes = canonicalScores[0] ? Object.keys(canonicalScores[0]).length : 0;
+  const predictorCorrelations = [];
+
+  for (let predIdx = 0; predIdx < p; predIdx++) {
+    const predName = predictorNames ? predictorNames[predIdx] : `Pred${predIdx + 1}`;
+    const correlation = { variable: predName };
+
+    for (let axisIdx = 1; axisIdx <= nAxes; axisIdx++) {
+      const axisKey = `rda${axisIdx}`;
+      const axisScores = canonicalScores.map(s => s[axisKey]);
+
+      // Get predictor values (centered)
+      const predValues = XCentered.map(row => row[predIdx]);
+
+      // Compute correlation
+      const predMean = 0; // already centered
+      const axisMean = axisScores.reduce((sum, v) => sum + v, 0) / n;
+
+      let numerator = 0;
+      let predSS = 0;
+      let axisSS = 0;
+
+      for (let i = 0; i < n; i++) {
+        const predDev = predValues[i] - predMean;
+        const axisDev = axisScores[i] - axisMean;
+        numerator += predDev * axisDev;
+        predSS += predDev * predDev;
+        axisSS += axisDev * axisDev;
+      }
+
+      const corr = (predSS > 0 && axisSS > 0) ? numerator / Math.sqrt(predSS * axisSS) : 0;
+      correlation[axisKey] = corr;
+    }
+
+    predictorCorrelations.push(correlation);
+  }
+
   const model = {
     canonicalScores,
     canonicalLoadings,
+    predictorCorrelations,
     eigenvalues: pcaModel.eigenvalues,
     varianceExplained: pcaModel.varianceExplained,
     constrainedVariance,

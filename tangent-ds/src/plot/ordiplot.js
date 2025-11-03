@@ -43,7 +43,7 @@ export function ordiplot(result, {
   }
 
   // Extract scores and construct data based on ordination type
-  const { scoresData, loadingsData, centroidsData, axisLabels } = extractOrdinationData(
+  const { scoresData, loadingsData, centroidsData, axisLabels, predictorData } = extractOrdinationData(
     result,
     type,
     axis1,
@@ -117,9 +117,41 @@ export function ordiplot(result, {
   // Add loadings for PCA, LDA, and RDA
   if (showLoadings && loadingsData && (type === 'pca' || type === 'lda' || type === 'rda')) {
     config.data.loadings = loadingsData;
+
+    // For RDA triplot: use blue for response loadings
+    const loadingColor = (type === 'rda' && predictorData) ? 'blue' : 'red';
+    const loadingTextColor = (type === 'rda' && predictorData) ? 'darkblue' : 'darkred';
+
     config.marks.push({
       type: 'arrow',
       data: 'loadings',
+      x1: 'x1',
+      y1: 'y1',
+      x2: 'x2',
+      y2: 'y2',
+      stroke: loadingColor,
+      strokeWidth: 2,
+      headLength: 8
+    });
+    config.marks.push({
+      type: 'text',
+      data: 'loadings',
+      x: 'x2',
+      y: 'y2',
+      text: 'variable',
+      fontSize: 10,
+      fill: loadingTextColor,
+      dx: 5,
+      dy: 5
+    });
+  }
+
+  // Add predictor correlations for RDA triplot
+  if (predictorData && type === 'rda') {
+    config.data.predictors = predictorData;
+    config.marks.push({
+      type: 'arrow',
+      data: 'predictors',
       x1: 'x1',
       y1: 'y1',
       x2: 'x2',
@@ -130,7 +162,7 @@ export function ordiplot(result, {
     });
     config.marks.push({
       type: 'text',
-      data: 'loadings',
+      data: 'predictors',
       x: 'x2',
       y: 'y2',
       text: 'variable',
@@ -274,7 +306,7 @@ function extractOrdinationData(result, type, axis1, axis2, colorBy, labels, load
     };
 
   } else if (type === 'rda') {
-    const { canonicalScores, canonicalLoadings } = result;
+    const { canonicalScores, canonicalLoadings, predictorCorrelations } = result;
 
     scoresData = canonicalScores.map((score, i) => ({
       x: score[`rda${axis1}`],
@@ -284,6 +316,7 @@ function extractOrdinationData(result, type, axis1, axis2, colorBy, labels, load
       label: labels ? labels[i] : `Site ${i}`
     }));
 
+    // Response loadings (species/response variables)
     if (canonicalLoadings) {
       loadingsData = canonicalLoadings.map((loading, i) => ({
         x1: 0,
@@ -291,6 +324,20 @@ function extractOrdinationData(result, type, axis1, axis2, colorBy, labels, load
         x2: loading[`rda${axis1}`] * loadingScale,
         y2: loading[`rda${axis2}`] * loadingScale,
         variable: loading.variable || `Var${i + 1}`,
+        index: i,
+        type: 'response'
+      }));
+    }
+
+    // For triplot: use predictor correlations
+    let predictorData = null;
+    if (predictorCorrelations && predictorCorrelations.length > 0) {
+      predictorData = predictorCorrelations.map((corr, i) => ({
+        x1: 0,
+        y1: 0,
+        x2: corr[`rda${axis1}`] * loadingScale,
+        y2: corr[`rda${axis2}`] * loadingScale,
+        variable: corr.variable || `Pred${i + 1}`,
         index: i
       }));
     }
@@ -299,6 +346,8 @@ function extractOrdinationData(result, type, axis1, axis2, colorBy, labels, load
       x: `RDA${axis1}`,
       y: `RDA${axis2}`
     };
+
+    return { scoresData, loadingsData, centroidsData, axisLabels, predictorData };
   }
 
   return { scoresData, loadingsData, centroidsData, axisLabels };
