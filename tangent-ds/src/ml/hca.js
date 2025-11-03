@@ -193,11 +193,13 @@ export function fit(X, { linkage = "average" } = {}) {
       }
     }
 
-    const merged = [...clusters[minI], ...clusters[minJ]];
+    const cluster1Indices = clusters[minI].slice().sort((a, b) => a - b);
+    const cluster2Indices = clusters[minJ].slice().sort((a, b) => a - b);
+    const merged = [...cluster1Indices, ...cluster2Indices].sort((a, b) => a - b);
 
     merges.push({
-      cluster1: clusters[minI],
-      cluster2: clusters[minJ],
+      cluster1: cluster1Indices,
+      cluster2: cluster2Indices,
       distance: minDist,
       size: merged.length,
     });
@@ -246,7 +248,7 @@ export function cut(model, k) {
     );
 
     if (idx1 !== -1 && idx2 !== -1) {
-      const merged = [...clusters[idx1], ...clusters[idx2]];
+      const merged = [...clusters[idx1], ...clusters[idx2]].sort((a, b) => a - b);
       clusters.splice(idx2, 1);
       clusters.splice(idx1, 1, merged);
     }
@@ -289,7 +291,7 @@ export function cutHeight(model, height) {
     );
 
     if (idx1 !== -1 && idx2 !== -1) {
-      const merged = [...clusters[idx1], ...clusters[idx2]];
+      const merged = [...clusters[idx1], ...clusters[idx2]].sort((a, b) => a - b);
       clusters.splice(idx2, 1);
       clusters.splice(idx1, 1, merged);
     }
