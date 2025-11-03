@@ -3,7 +3,9 @@
  */
 
 import * as kmeans from './kmeans.js';
+import * as hca from './hca.js';
 import * as polynomial from './polynomial.js';
+import * as silhouette from './silhouette.js';
 import * as mlp from './mlp.js';
 import * as validation from './validation.js';
 import * as preprocessing from './preprocessing.js';
@@ -17,6 +19,7 @@ import { Pipeline, GridSearchCV } from './pipeline.js';
 
 // Class-based estimators (scikit-like)
 import { KMeans } from './estimators/KMeans.js';
+import { HCA } from './estimators/HCA.js';
 import { KNNClassifier, KNNRegressor } from './estimators/KNN.js';
 import { DecisionTreeClassifier, DecisionTreeRegressor } from './estimators/DecisionTree.js';
 import { RandomForestClassifier, RandomForestRegressor } from './estimators/RandomForest.js';
@@ -28,6 +31,8 @@ export {
   // K-means clustering (functional and class-based)
   kmeans,
   KMeans,
+  hca,
+  HCA,
   KNNClassifier,
   KNNRegressor,
   DecisionTreeClassifier,
@@ -41,6 +46,9 @@ export {
 
   // Polynomial regression
   polynomial,
+
+  // Silhouette analysis utilities
+  silhouette,
 
   // Multilayer Perceptron
   mlp,

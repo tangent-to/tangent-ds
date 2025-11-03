@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fit as kfit, predict as kpredict, silhouetteScore as ksilhouette } from '../src/ml/kmeans.js';
-import { KMeans } from '../src/ml/index.js';
+import { KMeans, silhouette as silhouetteUtils } from '../src/ml/index.js';
 
 describe('k-means clustering', () => {
   describe('functional API', () => {
@@ -166,6 +166,37 @@ describe('k-means clustering', () => {
       const km = new KMeans({ k: 1 });
       const score = km.silhouetteScore(data, labels);
       expect(score).toBe(0);
+    });
+  });
+
+  describe('silhouette utilities', () => {
+    it('should compute per-sample silhouettes', () => {
+      const data = [
+        [0, 0], [0, 1], [1, 0],
+        [5, 5], [5, 6], [6, 5]
+      ];
+      const labels = [0, 0, 0, 1, 1, 1];
+
+      const samples = silhouetteUtils.silhouetteSamples(data, labels);
+
+      expect(samples.length).toBe(6);
+      samples.forEach((sample) => {
+        expect(sample).toHaveProperty('silhouette');
+        expect(sample.silhouette).toBeLessThanOrEqual(1);
+        expect(sample.silhouette).toBeGreaterThanOrEqual(-1);
+      });
+
+      const clusters = silhouetteUtils.silhouetteByCluster(data, labels);
+      expect(clusters.length).toBe(2);
+      clusters.forEach((clusterInfo) => {
+        expect(clusterInfo.samples.length).toBeGreaterThan(0);
+        expect(typeof clusterInfo.average).toBe('number');
+      });
+    });
+
+    it('should throw when provided with invalid labels', () => {
+      const data = [[0, 0], [1, 1]];
+      expect(() => silhouetteUtils.silhouetteSamples(data, [0])).toThrow();
     });
   });
 });

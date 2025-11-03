@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fit, cut, cutHeight } from '../src/mva/hca.js';
-import { HCA } from '../src/mva/index.js';
+import { fit, cut, cutHeight } from '../src/ml/hca.js';
+import { HCA } from '../src/ml/index.js';
 import { plotHCA } from '../src/plot/plotHCA.js';
 import { createD3DendrogramRenderer } from '../src/plot/renderers/d3Dendrogram.js';
 
@@ -71,6 +71,42 @@ afterAll(() => {
     globalThis.document = originalDocument;
   }
 });
+
+function createFakeD3() {
+  return {
+    scaleLinear() {
+      let domain = [0, 1];
+      let range = [0, 1];
+      const scale = (value) => {
+        const span = domain[1] - domain[0];
+        if (span === 0) return range[0];
+        const t = (value - domain[0]) / span;
+        return range[0] + t * (range[1] - range[0]);
+      };
+      scale.domain = (values) => {
+        domain = values.slice();
+        return scale;
+      };
+      scale.range = (values) => {
+        range = values.slice();
+        return scale;
+      };
+      return scale;
+    }
+  };
+}
+
+function getNodePosition(svg, nodeId) {
+  const circle = Array.from(svg.querySelectorAll('circle'))
+    .find((el) => Number(el.dataset.nodeId) === nodeId);
+  if (!circle) {
+    throw new Error(`Node ${nodeId} not found in SVG.`);
+  }
+  return {
+    x: Number(circle.getAttribute('cx')),
+    y: Number(circle.getAttribute('cy'))
+  };
+}
 
 describe('HCA - Hierarchical Clustering', () => {
   describe('fit', () => {
@@ -304,29 +340,7 @@ describe('HCA - visualization helpers', () => {
   it('createD3DendrogramRenderer renders SVG output', () => {
     const model = fit(sampleData, { linkage: 'ward' });
     const spec = plotHCA(model);
-    const fakeD3 = {
-      scaleLinear() {
-        let domain = [0, 1];
-        let range = [0, 1];
-        const scale = (value) => {
-          const denom = domain[1] - domain[0];
-          if (denom === 0) return range[0];
-          const t = (value - domain[0]) / denom;
-          return range[0] + t * (range[1] - range[0]);
-        };
-        scale.domain = (values) => {
-          domain = values.slice();
-          return scale;
-        };
-        scale.range = (values) => {
-          range = values.slice();
-          return scale;
-        };
-        return scale;
-      }
-    };
-
-    const renderer = createD3DendrogramRenderer(fakeD3, { nodeRadius: 2 });
+    const renderer = createD3DendrogramRenderer(createFakeD3(), { nodeRadius: 2 });
     const svg = spec.show(renderer);
 
     expect(svg.tagName).toBe('SVG');
@@ -340,34 +354,13 @@ describe('HCA - visualization helpers', () => {
 
     const labels = svg.querySelectorAll('text');
     expect(labels.length).toBe(model.n);
+    expect(labels[0].getAttribute('transform')).toMatch(/rotate\(-90/);
   });
 
   it('createD3DendrogramRenderer respects orientation overrides', () => {
     const model = fit(sampleData);
     const spec = plotHCA(model);
-    const fakeD3 = {
-      scaleLinear() {
-        let domain = [0, 1];
-        let range = [0, 1];
-        const scale = (value) => {
-          const span = domain[1] - domain[0];
-          if (span === 0) return range[0];
-          const t = (value - domain[0]) / span;
-          return range[0] + t * (range[1] - range[0]);
-        };
-        scale.domain = (values) => {
-          domain = values.slice();
-          return scale;
-        };
-        scale.range = (values) => {
-          range = values.slice();
-          return scale;
-        };
-        return scale;
-      }
-    };
-
-    const renderer = createD3DendrogramRenderer(fakeD3);
+    const renderer = createD3DendrogramRenderer(createFakeD3());
     const horizontalSvg = spec.show(renderer, {
       config: { orientation: 'horizontal', width: 500, height: 300 }
     });
@@ -384,5 +377,48 @@ describe('HCA - visualization helpers', () => {
 
     const uniqueXPositions = new Set(leafCircles.map(circle => circle.getAttribute('cx')));
     expect(uniqueXPositions.size).toBe(1);
+  });
+
+  it('supports log-scaled branch heights', () => {
+    const data = [[0], [0.01], [100], [110]];
+    const model = fit(data);
+    const spec = plotHCA(model);
+
+    const linearSvg = spec.show(createD3DendrogramRenderer(createFakeD3()), {
+      config: { height: 320, width: 320 }
+    });
+    const logSvg = spec.show(createD3DendrogramRenderer(createFakeD3(), { distanceScale: 'log10' }), {
+      config: { height: 320, width: 320 }
+    });
+
+    const firstInternalId = model.n; // first merge id
+    const linearFirstMerge = getNodePosition(linearSvg, firstInternalId);
+    const logFirstMerge = getNodePosition(logSvg, firstInternalId);
+
+    expect(logFirstMerge.y).toBeLessThan(linearFirstMerge.y);
+  });
+
+  it('allows overriding label orientation', () => {
+    const model = fit(sampleData);
+    const spec = plotHCA(model);
+    const renderer = createD3DendrogramRenderer(createFakeD3(), {
+      labelOrientation: 'horizontal',
+      labelPadding: 16
+    });
+
+    const svg = spec.show(renderer);
+    const label = svg.querySelectorAll('text')[0];
+    expect(label.getAttribute('transform')).toBeNull();
+    expect(label.getAttribute('text-anchor')).toBe('middle');
+
+    const horizontalRenderer = createD3DendrogramRenderer(createFakeD3(), {
+      labelOrientation: 'vertical',
+      labelPadding: 10
+    });
+    const horizontalSvg = spec.show(horizontalRenderer, {
+      config: { orientation: 'horizontal' }
+    });
+    const horizontalLabel = horizontalSvg.querySelectorAll('text')[0];
+    expect(horizontalLabel.getAttribute('transform')).toMatch(/rotate\(-90/);
   });
 });

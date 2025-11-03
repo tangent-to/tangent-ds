@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as plot from '../src/plot/index.js';
 import * as mva from '../src/mva/index.js';
+import * as ml from '../src/ml/index.js';
 import * as interpret from '../src/ml/interpret.js';
 import * as lm from '../src/stats/lm.js';
 
@@ -134,7 +135,7 @@ describe('Plot Configuration Generators', () => {
     ];
     
     it('should generate dendrogram config', () => {
-      const hcaResult = mva.hca.fit(data);
+      const hcaResult = ml.hca.fit(data);
       const config = plot.plotHCA(hcaResult);
       
       expect(config).toHaveProperty('type', 'dendrogram');
@@ -147,7 +148,7 @@ describe('Plot Configuration Generators', () => {
     });
     
     it('should include linkage method', () => {
-      const hcaResult = mva.hca.fit(data, { linkage: 'complete' });
+      const hcaResult = ml.hca.fit(data, { linkage: 'complete' });
       const config = plot.plotHCA(hcaResult);
       
       expect(config.config.linkage).toBe('complete');
@@ -163,7 +164,7 @@ describe('Plot Configuration Generators', () => {
         [5.5, 8.2]
       ];
       
-      const hcaResult = mva.hca.fit(data);
+      const hcaResult = ml.hca.fit(data);
       const dendroConfig = plot.plotHCA(hcaResult);
       const layout = plot.dendrogramLayout(dendroConfig, { width: 640, height: 400 });
       
@@ -213,6 +214,38 @@ describe('Plot Configuration Generators', () => {
       
       expect(config.data.sites.length).toBe(Y.length);
       expect(config.data.species.length).toBe(Y[0].length);
+    });
+  });
+
+  describe('plotSilhouette', () => {
+    it('should plot silhouette scores from raw data', () => {
+      const data = [
+        [0, 0],
+        [0, 1],
+        [5, 5],
+        [6, 5],
+        [5, 6]
+      ];
+      const labels = [0, 0, 1, 1, 1];
+
+      const config = plot.plotSilhouette({ data, labels });
+
+      expect(config.type).toBe('silhouette');
+      expect(config.data.values.length).toBe(data.length);
+      expect(config.axes.x.label).toBe('Silhouette score');
+      expect(typeof config.show).toBe('function');
+    });
+
+    it('should accept precomputed samples', () => {
+      const samples = [
+        { index: 0, cluster: '0', silhouette: 0.8, a: 0.1, b: 0.5 },
+        { index: 1, cluster: '1', silhouette: 0.2, a: 0.4, b: 0.5 }
+      ];
+
+      const config = plot.plotSilhouette({ samples });
+
+      expect(config.data.values[0].silhouette).toBe(0.8);
+      expect(config.data.values[1].cluster).toBe('1');
     });
   });
   

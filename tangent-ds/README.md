@@ -242,7 +242,7 @@ rda.fit(response, explanatory);
 #### Hierarchical Clustering
 
 ```javascript
-const hca = new mva.HCA({ linkage: 'ward' });
+const hca = new ml.HCA({ linkage: 'ward' });
 hca.fit(data);
 console.log(hca.model.dendrogram);
 ```
@@ -266,6 +266,9 @@ const config = plot.plotResiduals(yTrue, yPred);
 
 // Feature importance
 const config = plot.plotFeatureImportance(model.featureImportances);
+
+// Silhouette plot
+const config = plot.plotSilhouette({ data: X, labels });
 ```
 
 Use these configs with Observable Plot or tangent-notebook to render actual visualizations.

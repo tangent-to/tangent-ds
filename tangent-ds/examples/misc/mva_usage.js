@@ -7,7 +7,7 @@
  */
 
 // %% [javascript]
-import { core, mva } from "../src/index.js";
+import { core, mva, ml } from "../src/index.js";
 
 console.log("=".repeat(70));
 console.log("@tangent.to/ds - Multivariate Analysis Examples (Penguins)");
@@ -103,7 +103,7 @@ const clusterData = validPenguinsForHCA.map((p) => [
   p.bill_depth_mm,
 ]);
 
-const hcaEstimator = new mva.HCA({ linkage: "average" });
+const hcaEstimator = new ml.HCA({ linkage: "average" });
 hcaEstimator.fit(clusterData);
 const hcaModel = hcaEstimator.model;
 const hcaSummary = hcaEstimator.summary();
@@ -291,7 +291,7 @@ const sp500Data = sp500Text.split("\n").slice(1, 21).map((line) => {
 const compareData = sp500Data.map((p) => [p]);
 
 ["single", "complete", "average"].forEach((linkage) => {
-  const estimator = new mva.HCA({ linkage });
+  const estimator = new ml.HCA({ linkage });
   estimator.fit(compareData);
   const labels = estimator.cut(3);
   console.log(`  ${linkage} linkage clusters:`, labels);

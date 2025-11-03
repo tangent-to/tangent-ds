@@ -7,7 +7,7 @@ import { attachTreeShow } from './show.js';
 
 /**
  * Generate dendrogram data structure
- * @param {Object} result - HCA result from mva.hca.fit()
+ * @param {Object} result - HCA result from ml.hca.fit()
  * @returns {Object} Dendrogram tree structure
  */
 export function plotHCA(result) {

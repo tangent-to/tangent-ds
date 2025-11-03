@@ -5,7 +5,7 @@
  * Uses real datasets from Vega Datasets: https://cdn.jsdelivr.net/npm/vega-datasets@2/data/
  */
 
-import { mva, plot } from "@tangent.to/ds";
+import { mva, ml, plot } from "@tangent.to/ds";
 
 // ## Generate PCA Dataset - Penguins Dataset
 console.log("=== PCA Visualization - Penguins Dataset ===\n");
@@ -121,7 +121,7 @@ const hcaData = validHCA.map((p) => [
   p.bill_depth_mm,
 ]);
 
-const hcaEstimator = new mva.HCA({ linkage: "complete" });
+const hcaEstimator = new ml.HCA({ linkage: "complete" });
 hcaEstimator.fit(hcaData);
 const hcaResult = hcaEstimator.model;
 const hcaSummary = hcaEstimator.summary();

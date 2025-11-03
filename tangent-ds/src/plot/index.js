@@ -32,3 +32,5 @@ export {
 
 // Renderer helpers
 export { createD3DendrogramRenderer } from './renderers/d3Dendrogram.js';
+
+export { plotSilhouette } from './plotSilhouette.js';

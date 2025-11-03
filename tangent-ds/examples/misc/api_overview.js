@@ -396,7 +396,7 @@ Group similar ecosystems based on environmental characteristics.
 // Use first 20 samples for clustering
 const clusterData = ecoData.X.slice(0, 20);
 
-const hcaEstimator = new mva.HCA({ linkage: 'complete' });
+const hcaEstimator = new ml.HCA({ linkage: 'complete' });
 hcaEstimator.fit(clusterData);
 const hcaResult = hcaEstimator.model;
 const hcaSummary = hcaEstimator.summary();
