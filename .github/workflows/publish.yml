@@ -69,6 +69,8 @@ jobs:
         run: |
           cd tangent-ds/docs
           npm run build
+        env:
+          SKIP_GENERATE_API: 1
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
