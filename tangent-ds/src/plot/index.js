@@ -29,3 +29,6 @@ export {
   plotQQ,
   plotLearningCurve
 } from './utils.js';
+
+// Renderer helpers
+export { createD3DendrogramRenderer } from './renderers/d3Dendrogram.js';

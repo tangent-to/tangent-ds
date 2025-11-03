@@ -2,6 +2,75 @@ import { describe, it, expect, vi } from 'vitest';
 import { fit, cut, cutHeight } from '../src/mva/hca.js';
 import { HCA } from '../src/mva/index.js';
 import { plotHCA } from '../src/plot/plotHCA.js';
+import { createD3DendrogramRenderer } from '../src/plot/renderers/d3Dendrogram.js';
+
+function createMockDocument() {
+  class MockElement {
+    constructor(tag) {
+      this.tagName = tag.toUpperCase();
+      this.attributes = new Map();
+      this.children = [];
+      this.dataset = {};
+      this.style = {};
+      this.textContent = '';
+      this.parentNode = null;
+    }
+
+    setAttribute(name, value) {
+      this.attributes.set(name, String(value));
+    }
+
+    getAttribute(name) {
+      const value = this.attributes.get(name);
+      return value === undefined ? null : value;
+    }
+
+    appendChild(child) {
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
+    }
+
+    querySelectorAll(tag) {
+      const matches = [];
+      const target = tag.toUpperCase();
+
+      const visit = (node) => {
+        node.children.forEach((child) => {
+          if (child.tagName === target) {
+            matches.push(child);
+          }
+          visit(child);
+        });
+      };
+
+      visit(this);
+      return matches;
+    }
+  }
+
+  return {
+    createElementNS(_namespace, tag) {
+      return new MockElement(tag);
+    }
+  };
+}
+
+const originalDocument = globalThis.document;
+
+beforeAll(() => {
+  if (typeof document === 'undefined') {
+    globalThis.document = createMockDocument();
+  }
+});
+
+afterAll(() => {
+  if (originalDocument === undefined) {
+    delete globalThis.document;
+  } else {
+    globalThis.document = originalDocument;
+  }
+});
 
 describe('HCA - Hierarchical Clustering', () => {
   describe('fit', () => {
@@ -230,5 +299,90 @@ describe('HCA - visualization helpers', () => {
     const spec = plotHCA(model);
 
     expect(() => spec.show({})).toThrow(/Unsupported dendrogram renderer/);
+  });
+
+  it('createD3DendrogramRenderer renders SVG output', () => {
+    const model = fit(sampleData, { linkage: 'ward' });
+    const spec = plotHCA(model);
+    const fakeD3 = {
+      scaleLinear() {
+        let domain = [0, 1];
+        let range = [0, 1];
+        const scale = (value) => {
+          const denom = domain[1] - domain[0];
+          if (denom === 0) return range[0];
+          const t = (value - domain[0]) / denom;
+          return range[0] + t * (range[1] - range[0]);
+        };
+        scale.domain = (values) => {
+          domain = values.slice();
+          return scale;
+        };
+        scale.range = (values) => {
+          range = values.slice();
+          return scale;
+        };
+        return scale;
+      }
+    };
+
+    const renderer = createD3DendrogramRenderer(fakeD3, { nodeRadius: 2 });
+    const svg = spec.show(renderer);
+
+    expect(svg.tagName).toBe('SVG');
+    expect(svg.getAttribute('width')).toBe(String(spec.config.width));
+
+    const circles = svg.querySelectorAll('circle');
+    expect(circles.length).toBe(model.n + model.dendrogram.length);
+
+    const lines = svg.querySelectorAll('line');
+    expect(lines.length).toBe(model.dendrogram.length * 3);
+
+    const labels = svg.querySelectorAll('text');
+    expect(labels.length).toBe(model.n);
+  });
+
+  it('createD3DendrogramRenderer respects orientation overrides', () => {
+    const model = fit(sampleData);
+    const spec = plotHCA(model);
+    const fakeD3 = {
+      scaleLinear() {
+        let domain = [0, 1];
+        let range = [0, 1];
+        const scale = (value) => {
+          const span = domain[1] - domain[0];
+          if (span === 0) return range[0];
+          const t = (value - domain[0]) / span;
+          return range[0] + t * (range[1] - range[0]);
+        };
+        scale.domain = (values) => {
+          domain = values.slice();
+          return scale;
+        };
+        scale.range = (values) => {
+          range = values.slice();
+          return scale;
+        };
+        return scale;
+      }
+    };
+
+    const renderer = createD3DendrogramRenderer(fakeD3);
+    const horizontalSvg = spec.show(renderer, {
+      config: { orientation: 'horizontal', width: 500, height: 300 }
+    });
+
+    expect(horizontalSvg.tagName).toBe('SVG');
+    expect(horizontalSvg.getAttribute('width')).toBe('500');
+    expect(horizontalSvg.getAttribute('height')).toBe('300');
+
+    const leafCircles = Array.from(horizontalSvg.querySelectorAll('circle'))
+      .filter(circle => {
+        const id = Number(circle.dataset.nodeId);
+        return Number.isFinite(id) && id < model.n;
+      });
+
+    const uniqueXPositions = new Set(leafCircles.map(circle => circle.getAttribute('cx')));
+    expect(uniqueXPositions.size).toBe(1);
   });
 });
