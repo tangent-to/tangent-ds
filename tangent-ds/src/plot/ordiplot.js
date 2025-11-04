@@ -22,6 +22,8 @@ import { attachShow } from './show.js';
  * @param {number} options.width - Plot width (default: 640)
  * @param {number} options.height - Plot height (default: 400)
  * @param {number} options.loadingScale - Scale factor for loading vectors (default: 3)
+ * @param {number} options.loadingFactor - Multiplier applied to loading vectors (default: 1, set 0 for auto)
+ * @param {number|null} options.predictorFactor - Multiplier for predictor arrows (RDA only, default: inherits loadingFactor; set 0 for auto)
  * @returns {Object} Plot configuration
  */
 export function ordiplot(result, {
@@ -35,7 +37,9 @@ export function ordiplot(result, {
   axis2 = 2,
   width = 640,
   height = 400,
-  loadingScale = 3
+  loadingScale = 3,
+  loadingFactor = 1,
+  predictorFactor = null
 } = {}) {
   // Auto-detect ordination type if not specified
   if (!type) {
@@ -100,6 +104,17 @@ export function ordiplot(result, {
     tip: labels ? true : false
   });
 
+  if (hasColorField) {
+    const uniqueColors = Array.from(new Set(scoresData.map((d) => d.color))); // eslint-disable-line no-undef
+    config.legends = config.legends || [];
+    config.legends.push({
+      fill: 'color',
+      type: 'symbol',
+      title: 'Group',
+      categories: uniqueColors
+    });
+  }
+
   // Add labels if provided
   if (labels) {
     config.marks.push({
@@ -116,7 +131,51 @@ export function ordiplot(result, {
 
   // Add loadings for PCA, LDA, and RDA
   if (showLoadings && loadingsData && (type === 'pca' || type === 'lda' || type === 'rda')) {
-    config.data.loadings = loadingsData;
+    const computeFactor = (vectors, requestedFactor) => {
+      let factor = requestedFactor ?? 1;
+      if (factor === 0) {
+        const maxScoreRadius = scoresData.reduce(
+          (max, point) => Math.max(max, Math.hypot(point.x || 0, point.y || 0)),
+          0
+        );
+        const maxVectorRadius = vectors.reduce(
+          (max, vec) => Math.max(max, Math.hypot(vec.x2 || vec.dx || 0, vec.y2 || vec.dy || 0)),
+          0
+        );
+        if (maxVectorRadius > 0) {
+          factor = maxScoreRadius > 0 ? maxScoreRadius / maxVectorRadius : 1;
+        } else {
+          factor = 1;
+        }
+      }
+      return factor;
+    };
+
+    const appliedLoadingFactor = computeFactor(loadingsData, loadingFactor);
+    const scaledLoadings = appliedLoadingFactor === 1
+      ? loadingsData
+      : loadingsData.map((loading) => ({
+          ...loading,
+          x2: (loading.x2 || 0) * appliedLoadingFactor,
+          y2: (loading.y2 || 0) * appliedLoadingFactor
+        }));
+
+    config.data.loadings = scaledLoadings;
+
+    if (type === 'rda' && predictorData && predictorData.length) {
+      const appliedPredictorFactor = computeFactor(
+        predictorData,
+        predictorFactor === null ? loadingFactor : predictorFactor
+      );
+      const scaledPredictors = appliedPredictorFactor === 1
+        ? predictorData
+        : predictorData.map((pred) => ({
+            ...pred,
+            x2: (pred.x2 || 0) * appliedPredictorFactor,
+            y2: (pred.y2 || 0) * appliedPredictorFactor
+          }));
+      config.data.predictors = scaledPredictors;
+    }
 
     // For RDA triplot: use blue for response loadings
     const loadingColor = (type === 'rda' && predictorData) ? 'blue' : 'red';
@@ -148,7 +207,9 @@ export function ordiplot(result, {
 
   // Add predictor correlations for RDA triplot
   if (predictorData && type === 'rda') {
-    config.data.predictors = predictorData;
+    if (!config.data.predictors) {
+      config.data.predictors = predictorData;
+    }
     config.marks.push({
       type: 'arrow',
       data: 'predictors',

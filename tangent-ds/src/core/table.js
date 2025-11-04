@@ -513,6 +513,81 @@ export function prepareX({ columns, data, omit_missing = true, encode = null } =
 }
 
 /**
+ * Utility to one-hot encode columns in a table-like object.
+ *
+ * @param {Object} options
+ * @param {Array|Object} options.data - Array of row objects or table-like input
+ * @param {string|Array<string>} options.columns - Column or columns to encode
+ * @param {boolean} [options.dropFirst=true] - Drop first dummy (gives D-1 columns)
+ * @param {boolean} [options.keepOriginal=false] - Keep the original categorical column
+ * @param {boolean} [options.prefix=true] - Prefix generated column names with original column name
+ * @param {string} [options.handleUnknown="ignore"] - Behaviour for unseen categories
+ * @returns {Object} { data, dummyInfo }
+ */
+export function oneHotEncodeTable({
+  data,
+  columns,
+  dropFirst = true,
+  keepOriginal = false,
+  prefix = true,
+  handleUnknown = "ignore"
+} = {}) {
+  if (!data) {
+    throw new Error("oneHotEncodeTable: data parameter is required");
+  }
+
+  const rows = normalize(data);
+  const columnList = Array.isArray(columns) ? columns : [columns];
+  const resultRows = rows.map((row) => ({ ...row }));
+  const dummyInfo = new Map();
+
+  for (const column of columnList) {
+    if (!rows.length || !(column in rows[0])) {
+      throw new Error(`oneHotEncodeTable: column ${column} not found in data`);
+    }
+
+    const encoder = new OneHotEncoder({ handleUnknown });
+    const values = rows.map((row) => row[column]);
+    encoder.fit(values);
+
+    const categories = encoder.categories_.slice();
+    const includedIndices = [];
+    const columnNames = [];
+
+    categories.forEach((cat, idx) => {
+      if (dropFirst && idx === 0) return;
+      includedIndices.push(idx);
+      const colName = prefix ? `${column}_${String(cat)}` : String(cat);
+      columnNames.push(colName);
+    });
+
+    resultRows.forEach((row, rowIndex) => {
+      const encodedVec = encoder.transform([values[rowIndex]])[0];
+      includedIndices.forEach((catIdx, idx) => {
+        const colName = columnNames[idx];
+        row[colName] = encodedVec[catIdx];
+      });
+      if (!keepOriginal) {
+        delete row[column];
+      }
+    });
+
+    dummyInfo.set(column, {
+      column,
+      categories,
+      dropFirst,
+      columnNames,
+      encoder
+    });
+  }
+
+  return {
+    data: resultRows,
+    dummyInfo
+  };
+}
+
+/**
  * Prepare feature matrix X and response vector y from table-like data.
  * Supports categorical encoding for X and y via `encode` option:
  *   prepareXY({ X, y, data, omit_missing = true, encode = null })
