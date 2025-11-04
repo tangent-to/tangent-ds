@@ -7,10 +7,12 @@ import { svd, Matrix, solveLeastSquares, eig } from "../core/linalg.js";
 import { mean, stddev } from "../core/math.js";
 import { prepareXY } from "../core/table.js";
 import {
-  applyScalingToScores,
-  applyScalingToLoadings,
+  columnsToRows,
+  normalizeScaling,
+  scaleOrdination,
   toScoreObjects,
-  toLoadingObjects
+  toLoadingObjects,
+  eigenvaluePowers,
 } from "./scaling.js";
 
 function toNumericMatrix(X) {
@@ -20,7 +22,7 @@ function toNumericMatrix(X) {
 export function fit(X, y, options = {}) {
   let featureNames = null;
   let scale = options.scale !== undefined ? options.scale : false;
-  let scaling = options.scaling !== undefined ? options.scaling : 0;
+  let scaling = options.scaling !== undefined ? options.scaling : 2;
 
   if (
     X && typeof X === "object" && !Array.isArray(X) &&
@@ -49,6 +51,8 @@ export function fit(X, y, options = {}) {
   if (!featureNames && Array.isArray(options.featureNames)) {
     featureNames = options.featureNames.map((name) => String(name));
   }
+
+  const appliedScaling = normalizeScaling(scaling);
 
   const data = toNumericMatrix(X);
   const n = data.length;
@@ -230,52 +234,54 @@ export function fit(X, y, options = {}) {
   }
   const scalingsMatrix = scalingMatrix.mmul(selectedEigenvectors);
 
- const discriminantAxes = [];
- for (let j = 0; j < nComponents; j++) {
-    const axis = [];
-    for (let i = 0; i < p; i++) {
-      axis.push(scalingsMatrix.get(i, j));
-    }
-
-    // Orientation normalization: align with original eigenvector direction
-    const sign = Math.sign(axis.reduce((acc, val) => acc + val, 0)) || 1;
-    const normalized = axis.map((v) => v * sign);
-    // Scale so within-class variance approximately 1
-    const axisMat = new Matrix([normalized]);
-    const denom = axisMat.mmul(new Matrix(SwOriginal)).mmul(axisMat.transpose()).get(0, 0);
-    const scale = denom > 1e-12 ? 1 / Math.sqrt(denom) : 1;
-    discriminantAxes.push(normalized.map((v) => v * scale));
- }
-
   const projectedMatrix = whitenedMatrix.mmul(selectedEigenvectors);
-  const projectedDataBase = projectedMatrix.to2DArray();
+  const rawSiteMatrix = projectedMatrix.to2DArray();
 
-  // Apply scaling transformation to scores
-  const sqrtEigenvalues = sortedEigenvalues.map(v => v > 0 ? Math.sqrt(v) : 0);
-  const scaledScores = applyScalingToScores({
-    base: projectedDataBase,
-    u: null,
-    singularValues: sqrtEigenvalues,
-    scaling,
-    sqrtNSamples: Math.sqrt(Math.max(n - 1, 1))
+  const rawLoadingColumns = [];
+  const axisSigns = [];
+  for (let j = 0; j < nComponents; j++) {
+    const column = [];
+    for (let i = 0; i < p; i++) {
+      column.push(scalingsMatrix.get(i, j));
+    }
+    const sign = Math.sign(column.reduce((acc, val) => acc + val, 0)) || 1;
+    axisSigns.push(sign);
+    rawLoadingColumns.push(column.map((v) => v * sign));
+    for (let i = 0; i < rawSiteMatrix.length; i++) {
+      rawSiteMatrix[i][j] *= sign;
+    }
+  }
+
+  const rawLoadingMatrix = columnsToRows(rawLoadingColumns);
+  const scaled = scaleOrdination({
+    rawSites: rawSiteMatrix,
+    rawLoadings: rawLoadingMatrix,
+    eigenvalues: sortedEigenvalues,
+    scaling: appliedScaling,
   });
 
-  const scores = scaledScores.map((row, i) => {
-    const score = { class: y[i] };
-    row.forEach((value, idx) => {
-      score[`ld${idx + 1}`] = value;
-    });
-    return score;
-  });
+  const scores = toScoreObjects(
+    scaled.scores,
+    'ld',
+    (idx) => ({ class: y[idx] })
+  );
 
-  // Use scaled scores for downstream calculations
-  const projectedData = scaledScores;
+  const variableNames = featureNames && featureNames.length === p
+    ? featureNames
+    : Array.from({ length: p }, (_, idx) => featureNames?.[idx] ?? `var${idx + 1}`);
+  const loadings = toLoadingObjects(scaled.loadings, variableNames, 'ld');
+
+  const discriminantAxes = rawLoadingColumns.map((col, compIdx) =>
+    col.map((val) => val * scaled.loadingFactors[compIdx])
+  );
+
+  const scaledSiteMatrix = scaled.scores;
 
   const classMeanScores = classIndices.map((indices) => {
     const meanVec = new Array(nComponents).fill(0);
     for (const idx of indices) {
       for (let j = 0; j < nComponents; j++) {
-        meanVec[j] += projectedData[idx][j];
+        meanVec[j] += scaledSiteMatrix[idx][j];
       }
     }
     for (let j = 0; j < nComponents; j++) {
@@ -288,7 +294,7 @@ export function fit(X, y, options = {}) {
     const stdVec = new Array(nComponents).fill(0);
     for (const idx of indices) {
       for (let j = 0; j < nComponents; j++) {
-        const diff = projectedData[idx][j] - classMeanScores[classIdx][j];
+        const diff = scaledSiteMatrix[idx][j] - classMeanScores[classIdx][j];
         stdVec[j] += diff * diff;
       }
     }
@@ -298,21 +304,19 @@ export function fit(X, y, options = {}) {
     return stdVec;
   });
 
-  // Apply scaling transformation to loadings
-  const loadingsResult = applyScalingToLoadings({
-    components: discriminantAxes,
-    sqrtEigenvalues,
-    scaling,
-    featureNames: featureNames || (Array.isArray(options.featureNames) ? options.featureNames : null)
-  });
-
-  const loadings = toLoadingObjects(loadingsResult.matrix, loadingsResult.variableNames, 'ld');
-
   return {
     scores,
     loadings,
     eigenvalues: sortedEigenvalues,
+    rawScores: rawSiteMatrix,
+    rawLoadings: rawLoadingMatrix,
+    siteFactors: scaled.siteFactors,
+    loadingFactors: scaled.loadingFactors,
+    scaling: appliedScaling,
+    axisSigns,
+    exponent: scaled.exponent,
     discriminantAxes,
+    sampleClasses: y.slice(),
     classMeans: classMeansOriginal,
     classes,
     overallMean,
@@ -321,11 +325,7 @@ export function fit(X, y, options = {}) {
     eigenvectors: selectedEigenvectors.to2DArray(),
     classMeanScores,
     classStdScores,
-    featureNames: featureNames && featureNames.length === p
-      ? featureNames
-      : Array.isArray(options.featureNames) && options.featureNames.length === p
-        ? options.featureNames.map((name) => String(name))
-        : undefined,
+    featureNames: variableNames,
   };
 }
 
@@ -335,6 +335,10 @@ export function transform(model, X) {
     invScales,
     eigenvectors,
     overallMean,
+    axisSigns = [],
+    siteFactors = null,
+    eigenvalues,
+    scaling,
   } = model;
 
   const data = toNumericMatrix(X);
@@ -348,13 +352,18 @@ export function transform(model, X) {
   projected = projected.mmul(new Matrix(eigenvectors));
   const projectedData = projected.to2DArray();
 
-  return projectedData.map((row) => {
-    const score = {};
-    row.forEach((value, idx) => {
-      score[`ld${idx + 1}`] = value;
-    });
-    return score;
-  });
+  const factors = siteFactors && siteFactors.length
+    ? siteFactors
+    : eigenvaluePowers(eigenvalues, scaling === 1 ? 0.5 : 0);
+
+  const scaledData = projectedData.map((row) =>
+    row.map((val, idx) => {
+      const sign = axisSigns[idx] ?? 1;
+      return val * sign * (factors[idx] ?? 1);
+    })
+  );
+
+  return toScoreObjects(scaledData, 'ld');
 }
 
 export function predict(model, X) {

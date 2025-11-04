@@ -1,10 +1,13 @@
 import { Transformer } from '../../core/estimators/estimator.js';
 import { normalize } from '../../core/table.js';
 import * as rda from '../rda.js';
+import { normalizeScaling, toLoadingObjects, toScoreObjects } from '../scaling.js';
 
 const DEFAULT_PARAMS = {
   scale: false,
-  omit_missing: true
+  omit_missing: true,
+  scaling: 2,
+  constrained: true,
 };
 
 function prepareMatricesFromTable({
@@ -63,6 +66,8 @@ export class RDA extends Transformer {
     let responses = Y;
     let predictors = X;
     let scale = opts.scale !== undefined ? opts.scale : this.params.scale;
+    let scaling = opts.scaling !== undefined ? opts.scaling : this.params.scaling;
+    let constrained = opts.constrained !== undefined ? opts.constrained : this.params.constrained;
     let omitMissing = opts.omit_missing !== undefined
       ? opts.omit_missing
       : this.params.omit_missing;
@@ -83,6 +88,8 @@ export class RDA extends Transformer {
       responses = prepared.Y;
       predictors = prepared.X;
       scale = callOpts.scale;
+      scaling = callOpts.scaling !== undefined ? callOpts.scaling : scaling;
+      constrained = callOpts.constrained !== undefined ? callOpts.constrained : constrained;
       omitMissing = callOpts.omit_missing;
       opts = {
         ...opts,
@@ -97,12 +104,17 @@ export class RDA extends Transformer {
 
     const result = rda.fit(responses, predictors, {
       scale,
+      scaling,
+      constrained,
       responseNames: opts.responseNames,
       predictorNames: opts.predictorNames
     });
     this.model = { ...result, omit_missing: omitMissing };
     this.params.scale = scale;
     this.params.omit_missing = omitMissing;
+    this.params.scaling = normalizeScaling(result.scaling ?? scaling);
+    this.params.constrained = result.constrained ?? constrained;
+    this.params.constrained = result.constrained ?? constrained;
     this.fitted = true;
     return this;
   }
@@ -143,7 +155,9 @@ export class RDA extends Transformer {
       varianceExplained,
       n,
       p,
-      q
+      q,
+      scaling,
+      constrained
     } = this.model;
     return {
       constrainedVariance,
@@ -151,8 +165,50 @@ export class RDA extends Transformer {
       varianceExplained,
       samples: n,
       predictors: p,
-      responses: q
+      responses: q,
+      scaling: scaling ?? this.params.scaling,
+      constrained: constrained ?? this.params.constrained,
     };
+  }
+
+  /**
+   * Retrieve site (scores), response loadings, or predictor constraint scores.
+   * @param {'sites'|'samples'|'responses'|'variables'|'loadings'|'constraints'|'predictors'} type
+   * @param {boolean} [scaled=true]
+   */
+  getScores(type = 'sites', scaled = true) {
+    if (!this.fitted || !this.model) {
+      throw new Error('RDA: estimator not fitted. Call fit() before getScores().');
+    }
+
+    const {
+      scores,
+      loadings,
+      constraintScores,
+      rawScores,
+      rawLoadings,
+      rawConstraintScores,
+      responseNames,
+      predictorNames,
+    } = this.model;
+
+    const lower = type.toLowerCase();
+    if (lower === 'sites' || lower === 'samples') {
+      if (scaled) return scores;
+      return toScoreObjects(rawScores, 'rda');
+    }
+
+    if (lower === 'responses' || lower === 'variables' || lower === 'loadings') {
+      if (scaled) return loadings;
+      return toLoadingObjects(rawLoadings, responseNames, 'rda');
+    }
+
+    if (lower === 'constraints' || lower === 'predictors') {
+      if (scaled) return constraintScores;
+      return toLoadingObjects(rawConstraintScores, predictorNames, 'rda');
+    }
+
+    throw new Error(`Unknown score type "${type}". Expected "sites", "responses", or "constraints".`);
   }
 
   toJSON() {

@@ -1,144 +1,198 @@
 /**
- * Centralized scaling utilities for multivariate analysis (PCA, LDA, RDA)
+ * Ordination scaling helpers following ter Braak / vegan conventions.
  *
- * The scaling parameter controls how scores and loadings are scaled:
- * - scaling = 0: No additional scaling (default)
- * - scaling = 1: Scores divided by sqrt(n-1)
- * - scaling = 2: Correlation-based scaling (scores are U matrix, loadings multiplied by sqrt(eigenvalues))
+ * Given an SVD of a centred (and optionally standardised) data matrix
+ *   X = U * Lambda^{1/2} * V^T
+ * where Lambda contains the eigenvalues of X^T X / (n - 1),
+ * the site (sample) and variable (loading) scores obey:
+ *
+ *   site scores     = U * Lambda^{a}
+ *   variable scores = V * Lambda^{1 - a}
+ *
+ * Scaling choices:
+ *   scaling = 1  => a = 0.5  (distance-focused biplot)
+ *   scaling = 2  => a = 0    (correlation-focused biplot)
+ *
+ * We expose helpers that convert raw orthonormal coordinates (U, V)
+ * into scaled scores by applying the appropriate eigenvalue exponents.
  */
 
-const EPSILON = 1e-10;
+const SCALING_EXPONENT = {
+  1: 0.5,
+  2: 0,
+};
 
 /**
- * Apply scaling transformation to scores
- *
- * @param {Array<Array<number>>} base - Base scores matrix
- * @param {Array<Array<number>>|null} u - U matrix from SVD (optional, used for scaling=2)
- * @param {Array<number>} singularValues - Singular values from SVD
- * @param {number} scaling - Scaling type (0, 1, or 2)
- * @param {number} sqrtNSamples - Square root of (n-1)
- * @returns {Array<Array<number>>} Scaled scores
+ * Sanitize scaling option (only 1 or 2 are supported).
+ * Defaults to 2 (correlation biplot) when unspecified.
  */
-export function applyScalingToScores({
-  base,
-  u = null,
-  singularValues = [],
-  scaling = 0,
-  sqrtNSamples = 1
-}) {
-  if (!Array.isArray(base) || base.length === 0) {
-    return [];
-  }
-
-  const nComponents = base[0]?.length || 0;
-
-  switch (scaling) {
-    case 1: {
-      // Divide by sqrt(n-1)
-      const factor = sqrtNSamples > 0 ? 1 / sqrtNSamples : 1;
-      return base.map(row => row.map(val => val * factor));
-    }
-    case 2: {
-      // Correlation-based: use U matrix if available, otherwise divide by singular values
-      if (Array.isArray(u) && u.length) {
-        return u.map(row => row.slice(0, nComponents));
-      }
-      return base.map(row =>
-        row.map((val, idx) => {
-          const sv = singularValues[idx] ?? 1;
-          return sv > EPSILON ? val / sv : 0;
-        })
-      );
-    }
-    default:
-      // scaling = 0: no scaling
-      return base;
-  }
+export function normalizeScaling(value) {
+  if (value === 1 || value === '1') return 1;
+  return 2;
 }
 
 /**
- * Apply scaling transformation to loadings
+ * Compute Lambda^power given eigenvalues.
  *
- * @param {Array<Array<number>>} components - Component vectors (columns)
- * @param {Array<number>} sqrtEigenvalues - Square roots of eigenvalues
- * @param {number} scaling - Scaling type (0, 1, or 2)
- * @param {Array<string>|null} featureNames - Feature/variable names
- * @returns {Object} { matrix: Array<Array<number>>, variableNames: Array<string> }
+ * @param {number[]} eigenvalues - covariance eigenvalues (>= 0)
+ * @param {number} power - exponent to apply
+ * @returns {number[]} element-wise eigenvalue^power
  */
-export function applyScalingToLoadings({
-  components,
-  sqrtEigenvalues,
-  scaling = 0,
-  featureNames = null
-}) {
-  const nComponents = components.length;
-  const p = components[0]?.length || 0;
-  const variableNames = Array.isArray(featureNames) && featureNames.length === p
-    ? featureNames.slice()
-    : Array.from({ length: p }, (_, i) => `var${i + 1}`);
-
-  const scaledColumns = components.map((col, j) => {
-    // For scaling=2, multiply by sqrt(eigenvalue) to get correlation-based loadings
-    const factor = scaling === 2 ? (sqrtEigenvalues[j] ?? 1) : 1;
-    return col.map((val) => val * factor);
+export function eigenvaluePowers(eigenvalues, power) {
+  return eigenvalues.map((lambda) => {
+    if (lambda <= 0) return 0;
+    if (power === 0) return 1;
+    if (power === 0.5) return Math.sqrt(lambda);
+    if (power === 1) return lambda;
+    return Math.pow(lambda, power);
   });
-
-  const matrix = columnsToRows(scaledColumns);
-  return { matrix, variableNames };
 }
 
 /**
- * Convert column-oriented matrix to row-oriented matrix
+ * Apply ordination scaling to site/variable coordinates.
  *
- * @param {Array<Array<number>>} columns - Array of column vectors
- * @returns {Array<Array<number>>} Row-oriented matrix
+ * @param {Object} params
+ * @param {Array<Array<number>>} params.rawSites
+ * @param {Array<Array<number>>} params.rawLoadings
+ * @param {number[]} params.eigenvalues
+ * @param {number} params.scaling - 1 or 2
+ * @returns {Object} { scores, loadings, siteFactors, loadingFactors, exponent }
  */
-function columnsToRows(columns) {
-  if (!columns.length) return [];
-  const rows = columns[0].length;
-  const cols = columns.length;
-  const matrix = [];
-  for (let i = 0; i < rows; i++) {
-    const row = [];
-    for (let j = 0; j < cols; j++) {
-      row.push(columns[j][i]);
+export function scaleOrdination({
+  rawSites,
+  rawLoadings,
+  eigenvalues = [],
+  singularValues = null,
+  scaling = 2,
+}) {
+  const normalizedScaling = normalizeScaling(scaling);
+  const componentCount = rawLoadings?.[0]?.length ?? eigenvalues.length ?? 0;
+
+  const siteFactors = Array(componentCount).fill(1);
+  const loadingFactors = Array(componentCount).fill(1);
+
+  if (normalizedScaling === 1) {
+    if (Array.isArray(singularValues) && singularValues.length) {
+      for (let i = 0; i < componentCount; i++) {
+        siteFactors[i] = singularValues[i] ?? 0;
+      }
+    } else {
+      const fallback = eigenvaluePowers(eigenvalues, 0.5);
+      for (let i = 0; i < componentCount; i++) {
+        siteFactors[i] = fallback[i] ?? 0;
+      }
     }
-    matrix.push(row);
+    // Loadings remain unscaled (geometric distances preserved)
+  } else {
+    const sqrtEigen = eigenvaluePowers(eigenvalues, 0.5);
+    for (let i = 0; i < componentCount; i++) {
+      loadingFactors[i] = sqrtEigen[i] ?? 0;
+    }
   }
-  return matrix;
+
+  const scores = rawSites.map((row) =>
+    row.map((val, idx) => val * (siteFactors[idx] ?? 0))
+  );
+  const loadings = rawLoadings.map((row) =>
+    row.map((val, idx) => val * (loadingFactors[idx] ?? 0))
+  );
+
+  return {
+    scores,
+    loadings,
+    siteFactors,
+    loadingFactors,
+    exponent: SCALING_EXPONENT[normalizedScaling],
+    scaling: normalizedScaling,
+  };
 }
 
 /**
- * Convert scores matrix to array of objects with named components
+ * Apply ordination scaling to predictor/constraint (biplot) scores.
+ * They follow the same exponent as variable scores (1 - a).
  *
- * @param {Array<Array<number>>} matrix - Scores matrix
- * @param {string} prefix - Prefix for component names (e.g., 'pc', 'ld', 'rda')
- * @returns {Array<Object>} Array of score objects
+ * @param {Array<Array<number>>} rawConstraints
+ * @param {Object} options
+ * @param {Array<number>} [options.loadingFactors]
+ * @param {Array<number>} [options.eigenvalues]
+ * @param {number} [options.scaling]
+ * @returns {Array<Array<number>>}
  */
-export function toScoreObjects(matrix, prefix) {
-  return matrix.map((row) => {
+export function scaleConstraintScores(
+  rawConstraints,
+  { loadingFactors = null, eigenvalues = [], scaling = 2 } = {}
+) {
+  const normalizedScaling = normalizeScaling(scaling);
+  let factors = Array.isArray(loadingFactors) && loadingFactors.length
+    ? loadingFactors
+    : null;
+
+  if (!factors) {
+    const fallbackExponent = normalizedScaling === 1 ? 0 : 0.5;
+    factors = eigenvaluePowers(eigenvalues, fallbackExponent);
+  }
+
+  return rawConstraints.map((row) =>
+    row.map((val, idx) => val * factors[idx])
+  );
+}
+
+/**
+ * Convert matrix of scores into array-of-objects with component names.
+ *
+ * @param {Array<Array<number>>} matrix - rows correspond to observations
+ * @param {string} prefix - component prefix (e.g., 'pc', 'ld', 'rda')
+ * @param {Object} [extraPerRow] - optional extra properties per row index
+ * @returns {Array<Object>}
+ */
+export function toScoreObjects(matrix, prefix, extraPerRow = null) {
+  return matrix.map((row, idx) => {
     const entry = {};
-    row.forEach((val, idx) => {
-      entry[`${prefix}${idx + 1}`] = val;
+    if (extraPerRow && typeof extraPerRow === 'function') {
+      Object.assign(entry, extraPerRow(idx));
+    } else if (extraPerRow && typeof extraPerRow === 'object') {
+      Object.assign(entry, extraPerRow);
+    }
+    row.forEach((val, compIdx) => {
+      entry[`${prefix}${compIdx + 1}`] = val;
     });
     return entry;
   });
 }
 
 /**
- * Convert loadings matrix to array of objects with named components and variables
+ * Convert matrix of loadings (rows = variables) to annotated objects.
  *
- * @param {Array<Array<number>>} matrix - Loadings matrix (rows = variables)
- * @param {Array<string>} variableNames - Variable names
- * @param {string} prefix - Prefix for component names (e.g., 'pc', 'ld', 'rda')
- * @returns {Array<Object>} Array of loading objects
+ * @param {Array<Array<number>>} matrix - row-major loadings
+ * @param {Array<string>} variableNames - names per row
+ * @param {string} prefix - component prefix (e.g., 'pc', 'ld', 'rda')
+ * @returns {Array<Object>}
  */
 export function toLoadingObjects(matrix, variableNames, prefix) {
-  return matrix.map((row, i) => {
-    const entry = { variable: variableNames[i] || `var${i + 1}` };
-    row.forEach((val, idx) => {
-      entry[`${prefix}${idx + 1}`] = val;
+  return matrix.map((row, idx) => {
+    const entry = { variable: variableNames[idx] || `var${idx + 1}` };
+    row.forEach((val, compIdx) => {
+      entry[`${prefix}${compIdx + 1}`] = val;
     });
     return entry;
   });
+}
+
+/**
+ * Utility to transpose column-major component array into row-major matrix.
+ *
+ * @param {Array<Array<number>>} columns - component vectors (column-major)
+ * @returns {Array<Array<number>>} row-major matrix
+ */
+export function columnsToRows(columns) {
+  if (!columns || !columns.length) return [];
+  const rowCount = columns[0].length;
+  const colCount = columns.length;
+  const result = Array.from({ length: rowCount }, () => Array(colCount).fill(0));
+  for (let j = 0; j < colCount; j++) {
+    for (let i = 0; i < rowCount; i++) {
+      result[i][j] = columns[j][i];
+    }
+  }
+  return result;
 }

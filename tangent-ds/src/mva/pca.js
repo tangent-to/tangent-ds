@@ -8,10 +8,12 @@ import { svd, Matrix, toMatrix } from "../core/linalg.js";
 import { mean, stddev } from "../core/math.js";
 import { prepareX } from "../core/table.js";
 import {
-  applyScalingToScores,
-  applyScalingToLoadings,
+  normalizeScaling,
+  scaleOrdination,
   toScoreObjects,
-  toLoadingObjects
+  toLoadingObjects,
+  columnsToRows,
+  eigenvaluePowers,
 } from "./scaling.js";
 
 /**
@@ -85,9 +87,7 @@ export function fit(
     scaling = opts.scaling !== undefined ? opts.scaling : scaling;
   }
 
-  if (![0, 1, 2].includes(scaling)) {
-    scaling = 0;
-  }
+  const appliedScaling = normalizeScaling(scaling);
 
   // Convert to array format
   let data;
@@ -168,51 +168,44 @@ export function fit(
   const totalVar = sortedEigenvalues.reduce((a, b) => a + b, 0);
   const varianceExplained = sortedEigenvalues.map((val) => val / totalVar);
 
-  const baseComponents = sortedEigenvectors.map((col) => col.slice());
+  const componentColumns = sortedEigenvectors.map((col) => col.slice());
   const singularValues = s.slice(0, p);
-  const sqrtEigenvalues = sortedEigenvalues.map((val) =>
-    val > 0 ? Math.sqrt(val) : 0
-  );
-  const sqrtNSamples = Math.sqrt(Math.max(n - 1, 1));
+  const rawSiteMatrix = matrixToArray(U.subMatrix(0, n - 1, 0, p - 1));
+  const rawLoadingMatrix = columnsToRows(componentColumns);
 
-  const baseScoresMatrix = mat.mmul(new Matrix(baseComponents));
-  const uMatrix = U.subMatrix(0, n - 1, 0, p - 1);
-
-  const baseScoresData = matrixToArray(baseScoresMatrix);
-  const uScoresData = matrixToArray(uMatrix);
-
-  const scoresData = applyScalingToScores({
-    base: baseScoresData,
-    u: uScoresData,
+  const scaled = scaleOrdination({
+    rawSites: rawSiteMatrix,
+    rawLoadings: rawLoadingMatrix,
+    eigenvalues: sortedEigenvalues,
     singularValues,
-    scaling,
-    sqrtNSamples
+    scaling: appliedScaling,
   });
 
-  const loadingsData = applyScalingToLoadings({
-    components: baseComponents,
-    sqrtEigenvalues,
-    scaling,
-    featureNames
-  });
-
-  const scores = toScoreObjects(scoresData, 'pc');
-  const loadings = toLoadingObjects(loadingsData.matrix, loadingsData.variableNames, 'pc');
+  const scores = toScoreObjects(scaled.scores, 'pc');
+  const variableNames = Array.isArray(featureNames) && featureNames.length === rawLoadingMatrix.length
+    ? featureNames
+    : rawLoadingMatrix.map((_, idx) => `var${idx + 1}`);
+  const loadings = toLoadingObjects(scaled.loadings, variableNames, 'pc');
 
   const model = {
-    scores,
-    loadings,
     eigenvalues: sortedEigenvalues,
     varianceExplained,
     means,
     sds,
     scale,
     center,
-    scaling,
+    scaling: scaled.scaling,
+    exponent: scaled.exponent,
+    siteFactors: scaled.siteFactors,
+    loadingFactors: scaled.loadingFactors,
+    scores,
+    loadings,
+    rawScores: rawSiteMatrix,
+    rawLoadings: rawLoadingMatrix,
     nSamples: n,
     singularValues,
-    components: baseComponents,
-    featureNames: loadingsData.variableNames
+    components: componentColumns,
+    featureNames: variableNames,
   };
 
   return model;
@@ -228,12 +221,13 @@ export function transform(model, X) {
   const {
     components,
     singularValues,
-    scaling = 0,
+    scaling,
     nSamples,
     means,
     sds,
     scale,
-    center
+    center,
+    eigenvalues,
   } = model;
 
   let data = X.map((row) => Array.isArray(row) ? [...row] : [row]);
@@ -266,15 +260,21 @@ export function transform(model, X) {
     baseScores.push(entry);
   }
 
-  const scoresData = applyScalingToScores({
-    base: baseScores,
-    u: null,
-    singularValues,
-    scaling,
-    sqrtNSamples: nSamples ? Math.sqrt(Math.max(nSamples - 1, 1)) : 1
-  });
+  const rawScores = baseScores.map((row) =>
+    row.map((val, idx) => {
+      const sv = singularValues[idx] ?? 0;
+      if (sv === 0) return 0;
+      return val / sv;
+    })
+  );
 
-  return toScoreObjects(scoresData, 'pc');
+  const exponent = scaling === 1 ? 0.5 : 0;
+  const siteFactors = eigenvaluePowers(eigenvalues, exponent);
+  const scaledScores = rawScores.map((row) =>
+    row.map((val, idx) => val * siteFactors[idx])
+  );
+
+  return toScoreObjects(scaledScores, 'pc');
 }
 
 /**

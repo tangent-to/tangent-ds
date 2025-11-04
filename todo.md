@@ -1,7 +1,5 @@
 TODO
 - for first release
-    - change name Ai for model objects to Model
-    - manual tests in tangent-notebooks and Observable
     - rewrite tangent-notebook and Obsrevable tutorials
     
 
@@ -12,7 +10,7 @@ TODO
     - implement CCA
 
 DOING
-
+    - reboot scaling
 
 
 DONE

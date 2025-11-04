@@ -19,14 +19,21 @@
 
 import { Classifier } from '../../core/estimators/estimator.js';
 import * as ldaFn from '../lda.js';
+import { normalizeScaling, toLoadingObjects, toScoreObjects } from '../scaling.js';
+
+const DEFAULT_PARAMS = {
+  scale: false,
+  scaling: 2,
+};
 
 export class LDA extends Classifier {
   /**
    * @param {Object} params - optional hyperparameters (none required for basic LDA)
    */
   constructor(params = {}) {
-    super(params);
-    // The fitted model object returned by ldaFn.fit(...)
+    const merged = { ...DEFAULT_PARAMS, ...params };
+    super(merged);
+    this.params = merged;
     this.model = null;
     this.fitted = false;
   }
@@ -45,20 +52,29 @@ export class LDA extends Classifier {
 
     // If first argument is a declarative options object (contains data/X/y), forward directly
     if (X && typeof X === 'object' && !Array.isArray(X) && ('data' in X || 'X' in X || 'x' in X)) {
-      // Merge instance params with provided options when appropriate
-      const callOpts = { ...X };
+      const baseOpts = {
+        scale: this.params.scale,
+        scaling: this.params.scaling,
+      };
+      const callOpts = { ...baseOpts, ...X };
       // If intercept-like or other params existed, they'd be merged here.
       // Underlying ldaFn.fit supports receiving a single object { X, y, data, ... }
       result = ldaFn.fit(callOpts);
     } else {
       // Positional numeric call: fit(Xarray, yarray, opts)
       // pass opts through if provided
-      result = ldaFn.fit(X, y, opts);
+      const mergedOpts = {
+        scale: this.params.scale,
+        scaling: this.params.scaling,
+        ...opts,
+      };
+      result = ldaFn.fit(X, y, mergedOpts);
     }
 
     // Save model and metadata
     this.model = result;
     this.fitted = true;
+    this.params.scaling = normalizeScaling(result.scaling ?? this.params.scaling);
     return this;
   }
 
@@ -105,7 +121,36 @@ export class LDA extends Classifier {
       classes,
       nComponents: discriminantAxes ? discriminantAxes.length : 0,
       eigenvalues,
+      scaling: this.params.scaling,
     };
+  }
+
+  /**
+   * Retrieve site or variable scores (scaled or raw).
+   * @param {'sites'|'samples'|'variables'|'loadings'} type
+   * @param {boolean} [scaled=true]
+   */
+  getScores(type = 'sites', scaled = true) {
+    if (!this.fitted || !this.model) {
+      throw new Error('LDA: estimator not fitted. Call fit() first.');
+    }
+
+    const modelType = type.toLowerCase();
+    if (modelType === 'sites' || modelType === 'samples') {
+      if (scaled) return this.model.scores;
+      return toScoreObjects(
+        this.model.rawScores,
+        'ld',
+        (idx) => ({ class: this.model.sampleClasses?.[idx] })
+      );
+    }
+
+    if (modelType === 'variables' || modelType === 'loadings') {
+      if (scaled) return this.model.loadings;
+      return toLoadingObjects(this.model.rawLoadings, this.model.featureNames, 'ld');
+    }
+
+    throw new Error(`Unknown score type "${type}". Expected "sites" or "variables".`);
   }
 
   /**

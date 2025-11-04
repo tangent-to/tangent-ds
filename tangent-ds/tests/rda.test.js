@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fit, transform } from '../src/mva/rda.js';
-import { RDA } from '../src/mva/index.js';
+import { RDA, pca as pcaFns } from '../src/mva/index.js';
 import { approxEqual } from '../src/core/math.js';
 
 describe('RDA - Redundancy Analysis', () => {
@@ -63,6 +63,33 @@ describe('RDA - Redundancy Analysis', () => {
       expect(model.p).toBe(2);
       expect(model.coefficients.length).toBe(1); // 1 response variable
       expect(model.coefficients[0].length).toBe(2); // 2 predictors
+    });
+
+    it('should support residual (unconstrained) ordination', () => {
+      const Y = [
+        [1, 2, 3],
+        [2, 4, 6],
+        [3, 6, 9],
+        [4, 8, 12],
+      ];
+      const X = [[1], [2], [3], [4]];
+
+      const constrainedModel = fit(Y, X, { constrained: true });
+      const residualModel = fit(Y, X, { constrained: false });
+
+      expect(constrainedModel.constrained).toBe(true);
+      expect(residualModel.constrained).toBe(false);
+      expect(residualModel.constraintScores.length).toBe(0);
+
+      const residualPCA = pcaFns.fit(residualModel.rawResiduals, {
+        scale: false,
+        center: false,
+        scaling: residualModel.scaling,
+      });
+
+      residualModel.eigenvalues.forEach((eig, idx) => {
+        expect(eig).toBeCloseTo(residualPCA.eigenvalues[idx], 6);
+      });
     });
 
     it('should retain response names when fitted from declarative data', () => {
@@ -188,5 +215,39 @@ describe('RDA - class API', () => {
     expect(estimator.model.responseNames).toEqual(['y1', 'y2']);
     expect(estimator.model.predictorNames).toEqual(['x1', 'x2']);
     expect(estimator.model.canonicalLoadings[0].variable).toBe('y1');
+  });
+
+  it('getScores exposes raw and scaled site/loadings/constraints', () => {
+    const Y = [
+      [1, 2],
+      [2, 4],
+      [3, 6],
+      [4, 8],
+    ];
+    const X = [
+      [1, 0],
+      [2, 1],
+      [3, 0],
+      [4, 1],
+    ];
+
+    const estimator = new RDA({ scaling: 1 });
+    estimator.fit(Y, X);
+
+    const scaledSites = estimator.getScores('sites');
+    const rawSites = estimator.getScores('sites', false);
+    expect(scaledSites.length).toBe(rawSites.length);
+    expect(Math.abs(scaledSites[0].rda1 - rawSites[0].rda1)).toBeGreaterThan(0);
+
+    const correlationEstimator = new RDA({ scaling: 2 });
+    correlationEstimator.fit(Y, X);
+
+    const scaledResponses = correlationEstimator.getScores('responses');
+    const rawResponses = correlationEstimator.getScores('responses', false);
+    expect(Math.abs(scaledResponses[0].rda1 - rawResponses[0].rda1)).toBeGreaterThan(0);
+
+    const scaledConstraints = correlationEstimator.getScores('constraints');
+    const rawConstraints = correlationEstimator.getScores('constraints', false);
+    expect(Math.abs(scaledConstraints[0].rda1 - rawConstraints[0].rda1)).toBeGreaterThan(0);
   });
 });

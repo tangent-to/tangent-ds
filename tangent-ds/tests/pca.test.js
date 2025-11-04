@@ -2,6 +2,59 @@ import { describe, it, expect } from 'vitest';
 import { pca as pcaFns, PCA } from '../src/mva/index.js';
 import { approxEqual } from '../src/core/math.js';
 
+function scoreObjectsToMatrix(scores) {
+  if (!scores.length) return [];
+  const componentKeys = Object.keys(scores[0])
+    .filter((key) => key.startsWith('pc'))
+    .sort((a, b) => {
+      const ai = Number(a.slice(2));
+      const bi = Number(b.slice(2));
+      return ai - bi;
+    });
+  return scores.map((score) => componentKeys.map((key) => score[key]));
+}
+
+function euclideanDistance(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    sum += diff * diff;
+  }
+  return Math.sqrt(sum);
+}
+
+function pairwiseDistances(matrix) {
+  const n = matrix.length;
+  const distances = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      distances.push(euclideanDistance(matrix[i], matrix[j]));
+    }
+  }
+  return distances;
+}
+
+function correlation(a, b) {
+  const n = a.length;
+  const meanA = a.reduce((sum, val) => sum + val, 0) / n;
+  const meanB = b.reduce((sum, val) => sum + val, 0) / n;
+
+  let numerator = 0;
+  let denomA = 0;
+  let denomB = 0;
+
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - meanA;
+    const db = b[i] - meanB;
+    numerator += da * db;
+    denomA += da * da;
+    denomB += db * db;
+  }
+
+  if (denomA === 0 || denomB === 0) return 0;
+  return numerator / Math.sqrt(denomA * denomB);
+}
+
 describe('PCA - Principal Component Analysis (class API)', () => {
   describe('fit', () => {
     it('should fit PCA on simple 2D data', () => {
@@ -92,39 +145,88 @@ describe('PCA - Principal Component Analysis (class API)', () => {
       expect(featureNames).toEqual(['sepal_length', 'sepal_width']);
     });
 
-    it('should support scaling options for scores and loadings', () => {
+    it('scaling=1 preserves Euclidean distances of standardized samples', () => {
       const X = [
-        [2, 1],
-        [3, 4],
-        [4, 2],
-        [5, 5],
-        [6, 3]
+        [2, 4, 6],
+        [3, 5, 7],
+        [4, 6, 8],
+        [5, 7, 9]
       ];
 
-      const base = new PCA({ scaling: 0, center: true });
-      base.fit(X);
+      const p = new PCA({ center: true, scale: true, scaling: 1 });
+      p.fit(X);
 
-      const distance = new PCA({ scaling: 1, center: true });
-      distance.fit(X);
+      const means = p.model.means;
+      const sds = p.model.sds;
+      const standardized = X.map((row) =>
+        row.map((val, j) => (val - means[j]) / sds[j])
+      );
 
-      const correlation = new PCA({ scaling: 2, center: true });
-      correlation.fit(X);
+      const scoresMatrix = scoreObjectsToMatrix(p.model.scores);
 
-      const n = X.length;
-      const sqrtNminus1 = Math.sqrt(n - 1);
-      const baseScore = base.model.scores[0].pc1;
-      const distanceScore = distance.model.scores[0].pc1;
+      const distStd = pairwiseDistances(standardized);
+      const distScores = pairwiseDistances(scoresMatrix);
 
-      expect(distanceScore).toBeCloseTo(baseScore / sqrtNminus1, 6);
-      expect(distance.model.loadings[0].pc1).toBeCloseTo(base.model.loadings[0].pc1, 6);
+      for (let i = 0; i < distStd.length; i++) {
+        expect(distScores[i]).toBeCloseTo(distStd[i], 6);
+      }
+    });
 
-      const sv = base.model.singularValues[0];
-      const corrScore = correlation.model.scores[0].pc1;
-      expect(corrScore).toBeCloseTo(baseScore / sv, 6);
+    it('scaling=2 produces loadings equal to correlations with components', () => {
+      const X = [
+        [10, 20, 30],
+        [20, 25, 35],
+        [30, 15, 20],
+        [40, 30, 10],
+        [50, 35, 25],
+      ];
 
-      const sqrtEigen = Math.sqrt(base.model.eigenvalues[0]);
-      expect(correlation.model.loadings[0].pc1)
-        .toBeCloseTo(base.model.loadings[0].pc1 * sqrtEigen, 6);
+      const p = new PCA({ center: true, scale: true, scaling: 2 });
+      p.fit(X);
+
+      const means = p.model.means;
+      const sds = p.model.sds;
+      const standardized = X.map((row) =>
+        row.map((val, j) => (val - means[j]) / sds[j])
+      );
+
+      const scoresMatrix = scoreObjectsToMatrix(p.model.scores);
+
+      p.model.loadings.forEach((loading, varIdx) => {
+        const variableValues = standardized.map((row) => row[varIdx]);
+        const componentKeys = Object.keys(loading)
+          .filter((key) => key.startsWith('pc'))
+          .sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+        const vector = componentKeys.map((key) => loading[key]);
+        const length = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+        componentKeys.forEach((key, compIdx) => {
+          const compValues = scoresMatrix.map((row) => row[compIdx]);
+          const corr = correlation(variableValues, compValues);
+          const cosine = length > 0 ? vector[compIdx] / length : 0;
+          expect(corr).toBeCloseTo(cosine, 6);
+        });
+      });
+    });
+
+    it('getScores returns raw and scaled coordinates consistently', () => {
+      const X = [
+        [1, 2, 3],
+        [2, 3, 4],
+        [3, 4, 5],
+        [4, 5, 6],
+      ];
+
+      const p = new PCA({ center: true, scaling: 1 });
+      p.fit(X);
+
+      const raw = p.getScores('sites', false);
+      const scaled = p.getScores('sites', true);
+
+      expect(raw.length).toBe(scaled.length);
+      expect(raw[0]).toHaveProperty('pc1');
+      expect(scaled[0]).toHaveProperty('pc1');
+      // Raw coordinates should differ from scaled for scaling=1
+      expect(Math.abs(raw[0].pc1 - scaled[0].pc1)).toBeGreaterThan(0);
     });
   });
 

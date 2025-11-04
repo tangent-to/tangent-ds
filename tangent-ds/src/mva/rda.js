@@ -8,22 +8,28 @@ import * as pca from './pca.js';
 import { mean } from '../core/math.js';
 import { prepareX } from '../core/table.js';
 import {
-  applyScalingToScores,
-  applyScalingToLoadings,
+  normalizeScaling,
+  scaleOrdination,
+  scaleConstraintScores,
   toScoreObjects,
-  toLoadingObjects
+  toLoadingObjects,
+  eigenvaluePowers,
 } from './scaling.js';
 
 /**
- * Fit RDA model
+ * Fit RDA model.
+ *
  * @param {Array<Array<number>>} Y - Response matrix (n x q)
  * @param {Array<Array<number>>} X - Explanatory matrix (n x p)
- * @param {Object} options - {scale: boolean}
+ * @param {Object} options
+ * @param {boolean} [options.scale=false] - Standardise response variables before regression.
+ * @param {boolean} [options.constrained=true] - When true, perform PCA on fitted values (constrained ordination); when false, perform PCA on residuals (unconstrained ordination).
  * @returns {Object} RDA model
  */
 export function fit(Y, X, options = {}) {
   let scale = options.scale ?? false;
-  let scaling = options.scaling ?? 0;
+  let scaling = options.scaling ?? 2;
+  let constrained = options.constrained ?? true;
   let responseMatrix = Y;
   let predictorMatrix = X;
   let responseNames = Array.isArray(options.responseNames)
@@ -49,6 +55,7 @@ export function fit(Y, X, options = {}) {
     const omitMissing = opts.omit_missing !== undefined ? opts.omit_missing : true;
     scale = opts.scale !== undefined ? opts.scale : scale;
     scaling = opts.scaling !== undefined ? opts.scaling : scaling;
+    constrained = opts.constrained !== undefined ? opts.constrained : constrained;
 
     const responseList = Array.isArray(responseCols) ? responseCols : [responseCols];
     const predictorList = Array.isArray(predictorCols) ? predictorCols : [predictorCols];
@@ -78,6 +85,8 @@ export function fit(Y, X, options = {}) {
   if (!responseMatrix || !predictorMatrix) {
     throw new Error('RDA.fit requires response and predictor matrices.');
   }
+
+  const appliedScaling = normalizeScaling(scaling);
 
   const responseData = responseMatrix.map(row => Array.isArray(row) ? row : [row]);
   const explData = predictorMatrix.map(row => Array.isArray(row) ? row : [row]);
@@ -158,43 +167,62 @@ export function fit(Y, X, options = {}) {
     YResiduals.push(residuals);
   }
 
-  const fittedMatrix = [];
-  for (let i = 0; i < n; i++) {
-    const row = [];
-    for (let j = 0; j < q; j++) {
-      row.push(YFitted[j][i]);
-    }
-    fittedMatrix.push(row);
+const fittedMatrix = [];
+const residualMatrix = [];
+for (let i = 0; i < n; i++) {
+  const fittedRow = [];
+  const residualRow = [];
+  for (let j = 0; j < q; j++) {
+    fittedRow.push(YFitted[j][i]);
+    residualRow.push(YResiduals[j][i]);
   }
+  fittedMatrix.push(fittedRow);
+  residualMatrix.push(residualRow);
+}
 
-  const pcaModel = pca.fit(fittedMatrix, {
-    scale: false,  // Y is already scaled if needed
+const targetMatrix = constrained ? fittedMatrix : residualMatrix;
+
+const pcaModel = pca.fit(targetMatrix, {
+    scale: false,
     center: false,
-    scaling,  // Pass scaling parameter through
+    scaling: appliedScaling,
     columns: responseNames || undefined,
   });
 
-  const canonicalScores = pcaModel.scores.map(score => {
-    const newScore = {};
-    Object.keys(score).forEach(key => {
-      if (key.startsWith('pc')) {
-        const num = key.slice(2);
-        newScore[`rda${num}`] = score[key];
-      }
-    });
-    return newScore;
+  const rawSiteMatrix = pcaModel.rawScores;
+  const rawLoadingsMatrix = pcaModel.rawLoadings;
+
+  const ordination = scaleOrdination({
+    rawSites: rawSiteMatrix,
+    rawLoadings: rawLoadingsMatrix,
+    eigenvalues: pcaModel.eigenvalues,
+    singularValues: pcaModel.singularValues,
+    scaling: appliedScaling,
   });
 
-  const canonicalLoadings = pcaModel.loadings.map(loading => {
-    const newLoading = { variable: loading.variable };
-    Object.keys(loading).forEach(key => {
-      if (key.startsWith('pc')) {
-        const num = key.slice(2);
-        newLoading[`rda${num}`] = loading[key];
-      }
-    });
-    return newLoading;
+  const responseNamesFinal = responseNames && responseNames.length === rawLoadingsMatrix.length
+    ? responseNames
+    : Array.from({ length: rawLoadingsMatrix.length }, (_, idx) => responseNames?.[idx] ?? `Resp${idx + 1}`);
+
+  const predictorNamesFinal = predictorNames && predictorNames.length === p
+    ? predictorNames
+    : Array.from({ length: p }, (_, idx) => predictorNames?.[idx] ?? `Pred${idx + 1}`);
+
+  const scoresObjects = toScoreObjects(ordination.scores, 'rda');
+  const loadingsObjects = toLoadingObjects(ordination.loadings, responseNamesFinal, 'rda');
+
+let rawConstraintMatrix = [];
+let scaledConstraintMatrix = [];
+let constraintObjects = [];
+if (constrained) {
+  rawConstraintMatrix = solveLeastSquares(XCentered, rawSiteMatrix).to2DArray();
+  scaledConstraintMatrix = scaleConstraintScores(rawConstraintMatrix, {
+    loadingFactors: ordination.loadingFactors,
+    eigenvalues: pcaModel.eigenvalues,
+    scaling: appliedScaling,
   });
+  constraintObjects = toLoadingObjects(scaledConstraintMatrix, predictorNamesFinal, 'rda');
+}
 
   let totalInertia = 0;
   for (let j = 0; j < q; j++) {
@@ -214,65 +242,41 @@ export function fit(Y, X, options = {}) {
 
   const constrainedVariance = explainedInertia / totalInertia;
 
-  // Compute predictor correlations with canonical axes (for triplot)
-  const nAxes = canonicalScores[0] ? Object.keys(canonicalScores[0]).length : 0;
-  const predictorCorrelations = [];
+const predictorCorrelations = constraintObjects;
 
-  for (let predIdx = 0; predIdx < p; predIdx++) {
-    const predName = predictorNames ? predictorNames[predIdx] : `Pred${predIdx + 1}`;
-    const correlation = { variable: predName };
+const model = {
+  scores: scoresObjects,
+  loadings: loadingsObjects,
+  constraintScores: constraintObjects,
+  eigenvalues: pcaModel.eigenvalues,
+  varianceExplained: pcaModel.varianceExplained,
+  constrainedVariance,
+  coefficients,
+  YMeans,
+  XMeans,
+  n,
+  p,
+  q,
+  rawScores: rawSiteMatrix,
+  rawLoadings: rawLoadingsMatrix,
+  rawFitted: fittedMatrix,
+  rawResiduals: residualMatrix,
+  rawConstraintScores: rawConstraintMatrix,
+  siteFactors: ordination.siteFactors,
+  loadingFactors: ordination.loadingFactors,
+  scaling: appliedScaling,
+  exponent: ordination.exponent,
+  singularValues: pcaModel.singularValues,
+  components: pcaModel.components,
+  constrained: !!constrained,
+};
 
-    for (let axisIdx = 1; axisIdx <= nAxes; axisIdx++) {
-      const axisKey = `rda${axisIdx}`;
-      const axisScores = canonicalScores.map(s => s[axisKey]);
+  model.responseNames = responseNamesFinal;
+  model.predictorNames = predictorNamesFinal;
 
-      // Get predictor values (centered)
-      const predValues = XCentered.map(row => row[predIdx]);
-
-      // Compute correlation
-      const predMean = 0; // already centered
-      const axisMean = axisScores.reduce((sum, v) => sum + v, 0) / n;
-
-      let numerator = 0;
-      let predSS = 0;
-      let axisSS = 0;
-
-      for (let i = 0; i < n; i++) {
-        const predDev = predValues[i] - predMean;
-        const axisDev = axisScores[i] - axisMean;
-        numerator += predDev * axisDev;
-        predSS += predDev * predDev;
-        axisSS += axisDev * axisDev;
-      }
-
-      const corr = (predSS > 0 && axisSS > 0) ? numerator / Math.sqrt(predSS * axisSS) : 0;
-      correlation[axisKey] = corr;
-    }
-
-    predictorCorrelations.push(correlation);
-  }
-
-  const model = {
-    canonicalScores,
-    canonicalLoadings,
-    predictorCorrelations,
-    eigenvalues: pcaModel.eigenvalues,
-    varianceExplained: pcaModel.varianceExplained,
-    constrainedVariance,
-    coefficients,
-    YMeans,
-    XMeans,
-    n,
-    p,
-    q
-  };
-
-  if (responseNames) {
-    model.responseNames = responseNames;
-  }
-  if (predictorNames) {
-    model.predictorNames = predictorNames;
-  }
+  model.canonicalScores = scoresObjects;
+  model.canonicalLoadings = loadingsObjects;
+  model.predictorCorrelations = predictorCorrelations;
 
   return model;
 }
@@ -285,7 +289,16 @@ export function fit(Y, X, options = {}) {
  * @returns {Array<Object>} Canonical scores
  */
 export function transform(model, Y, X) {
-  const { coefficients, YMeans, XMeans, canonicalLoadings } = model;
+  const {
+    coefficients,
+    YMeans,
+    XMeans,
+    components,
+    singularValues,
+    siteFactors,
+    scaling,
+    eigenvalues,
+  } = model;
   
   const responseData = Y.map(row => Array.isArray(row) ? row : [row]);
   const explData = X.map(row => Array.isArray(row) ? row : [row]);
@@ -318,26 +331,35 @@ export function transform(model, Y, X) {
   }
   
   // Extract loading matrix
-  const nAxes = canonicalLoadings[0] ? Object.keys(canonicalLoadings[0]).length - 1 : 0;
-  const loadingMatrix = [];
-  for (let j = 0; j < nAxes; j++) {
-    const col = canonicalLoadings.map(l => l[`rda${j + 1}`]);
-    loadingMatrix.push(col);
-  }
-  
-  // Project onto canonical axes
-  const scores = [];
+  const nAxes = components.length;
+
+  const baseScores = [];
   for (const row of fittedMatrix) {
-    const score = {};
+    const entry = [];
     for (let j = 0; j < nAxes; j++) {
       let sum = 0;
       for (let k = 0; k < q; k++) {
-        sum += row[k] * loadingMatrix[j][k];
+        sum += row[k] * components[j][k];
       }
-      score[`rda${j + 1}`] = sum;
+      entry.push(sum);
     }
-    scores.push(score);
+    baseScores.push(entry);
   }
+
+  const rawScores = baseScores.map((row) =>
+    row.map((val, idx) => {
+      const sv = singularValues[idx] ?? 0;
+      return sv === 0 ? 0 : val / sv;
+    })
+  );
+
+  const exponent = scaling === 1 ? 0.5 : 0;
+  const siteScaling = siteFactors && siteFactors.length
+    ? siteFactors
+    : eigenvaluePowers(eigenvalues, exponent);
+  const scaledScores = rawScores.map((row) =>
+    row.map((val, idx) => val * (siteScaling[idx] ?? 1))
+  );
   
-  return scores;
+  return toScoreObjects(scaledScores, 'rda');
 }

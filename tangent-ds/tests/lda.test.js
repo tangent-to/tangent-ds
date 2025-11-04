@@ -69,6 +69,29 @@ describe('LDA - Linear Discriminant Analysis (class API)', () => {
       expect(Math.abs(mean1 - mean0)).toBeGreaterThan(0);
     });
 
+    it('getScores returns raw and scaled coordinates', () => {
+      const X = [
+        [0, 0], [0, 1],
+        [5, 5], [5, 6]
+      ];
+      const y = [0, 0, 1, 1];
+
+      const lda = new LDA({ scaling: 1 });
+      lda.fit(X, y);
+
+      const rawSites = lda.getScores('sites', false);
+      const scaledSites = lda.getScores('sites', true);
+
+      expect(rawSites.length).toBe(scaledSites.length);
+      expect(Math.abs(rawSites[0].ld1 - scaledSites[0].ld1)).toBeGreaterThan(0);
+
+      const ldaCorrelation = new LDA({ scaling: 2 });
+      ldaCorrelation.fit(X, y);
+      const rawLoadings = ldaCorrelation.getScores('variables', false);
+      const scaledLoadings = ldaCorrelation.getScores('variables', true);
+      expect(Math.abs(rawLoadings[0].ld1 - scaledLoadings[0].ld1)).toBeGreaterThan(0);
+    });
+
     it('should retain feature names when fitted from tabular data', () => {
       const data = [
         { sepal_length: 5.1, sepal_width: 3.5, species: 'setosa' },

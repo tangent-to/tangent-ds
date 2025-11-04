@@ -71,6 +71,9 @@ function detectModelType(model) {
   }
 
   // MVA models
+  if (model.constraintScores && model.eigenvalues) {
+    return 'rda';
+  }
   if (model.scores && model.loadings && model.eigenvalues) {
     return 'pca';
   }

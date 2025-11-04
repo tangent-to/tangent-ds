@@ -17,13 +17,14 @@
 import { Transformer } from '../../core/estimators/estimator.js';
 import { prepareX } from '../../core/table.js';
 import * as pcaFn from '../pca.js';
+import { normalizeScaling, toScoreObjects, toLoadingObjects } from '../scaling.js';
 
 const DEFAULT_PARAMS = {
   center: true,
   scale: false,
   columns: null,
   omit_missing: true,
-  scaling: 0
+  scaling: 2
 };
 
 export class PCA extends Transformer {
@@ -77,7 +78,7 @@ export class PCA extends Transformer {
       scale: effectiveParams.scale,
       columns: effectiveParams.columns ?? null,
       omit_missing: effectiveParams.omit_missing,
-      scaling: effectiveParams.scaling ?? 0
+      scaling: normalizeScaling(effectiveParams.scaling ?? this.model.scaling),
     };
 
     return this;
@@ -139,10 +140,35 @@ export class PCA extends Transformer {
       cumulativeVariance: this.cumulativeVariance(),
       centered: !!this.params.center,
       scaled: !!this.params.scale,
-      scaling: this.params.scaling ?? 0,
+      scaling: this.params.scaling ?? 2,
       means,
       sds
     };
+  }
+
+  /**
+   * Retrieve site or variable scores with optional scaling.
+   *
+   * @param {'sites'|'samples'|'variables'|'loadings'} type
+   * @param {boolean} [scaled=true] - return scaled or raw coordinates
+   */
+  getScores(type = 'sites', scaled = true) {
+    if (!this.fitted || !this.model) {
+      throw new Error('PCA: estimator not fitted. Call fit() before getScores().');
+    }
+
+    const modelType = type.toLowerCase();
+    if (modelType === 'sites' || modelType === 'samples') {
+      if (scaled) return this.model.scores;
+      return toScoreObjects(this.model.rawScores, 'pc');
+    }
+
+    if (modelType === 'variables' || modelType === 'loadings') {
+      if (scaled) return this.model.loadings;
+      return toLoadingObjects(this.model.rawLoadings, this.model.featureNames, 'pc');
+    }
+
+    throw new Error(`Unknown score type "${type}". Expected "sites" or "variables".`);
   }
 
   /**
