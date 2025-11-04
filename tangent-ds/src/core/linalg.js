@@ -3,7 +3,7 @@
  * This abstraction allows future backend swaps (e.g., WASM)
  */
 
-import { Matrix, SingularValueDecomposition, EigenvalueDecomposition, inverse as mlInverse } from 'ml-matrix';
+import { Matrix, SingularValueDecomposition, EigenvalueDecomposition, inverse as mlInverse, pseudoInverse as mlPseudoInverse } from 'ml-matrix';
 
 /**
  * Convert array-like structure to Matrix
@@ -123,6 +123,11 @@ export function inverse(data) {
   const mat = toMatrix(data);
   // Use the static inverse function from ml-matrix
   return mlInverse(mat);
+}
+
+export function pseudoInverse(data) {
+  const mat = toMatrix(data);
+  return mlPseudoInverse(mat);
 }
 
 export { Matrix };

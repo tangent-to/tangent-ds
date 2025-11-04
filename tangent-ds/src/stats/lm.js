@@ -3,7 +3,7 @@
  * Uses normal equations: β = (X'X)^-1 X'y
  */
 
-import { Matrix, solveLeastSquares, toMatrix } from "../core/linalg.js";
+import { Matrix, solveLeastSquares, toMatrix, pseudoInverse } from "../core/linalg.js";
 import { mean, sum } from "../core/math.js";
 import { prepareXY } from "../core/table.js";
 
@@ -147,13 +147,7 @@ export function fit(
     try {
       XtXInv = XtX.inverse();
     } catch (err) {
-      if (typeof Matrix.pseudoInverse === "function") {
-        XtXInv = Matrix.pseudoInverse(XtX);
-      } else if (typeof XtX.pseudoInverse === "function") {
-        XtXInv = XtX.pseudoInverse();
-      } else {
-        throw new Error("Matrix pseudo-inverse not available");
-      }
+      XtXInv = pseudoInverse(XtX);
     }
 
     const sigmaSquared = regressionSE ** 2;
