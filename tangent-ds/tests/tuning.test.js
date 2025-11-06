@@ -1,15 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { GridSearchCV, RandomSearchCV, distributions } from '../src/ml/tuning.js';
-import * as lm from '../src/stats/lm.js';
+import { GLM } from '../src/stats/index.js';
 import * as metrics from '../src/ml/metrics.js';
 
-// Helper to wrap lm model
-function wrapLmModel(lmResult) {
-  return {
-    ...lmResult,
-    intercept: true,
-    predict: (X) => lm.predict(lmResult.coefficients, X, { intercept: true })
-  };
+// Helper to create and fit a linear model using GLM
+function fitLinearModel(X, y, options = {}) {
+  const model = new GLM({ family: 'gaussian', intercept: options.intercept !== false });
+  model.fit(X, y);
+  return model;
 }
 
 describe('Hyperparameter Tuning', () => {
@@ -24,7 +22,7 @@ describe('Hyperparameter Tuning', () => {
     it('should search over parameter grid', () => {
       const fitFn = (Xtrain, ytrain, params) => {
         // Dummy params, just fit model
-        return wrapLmModel(lm.fit(Xtrain, ytrain, { intercept: true }));
+        return fitLinearModel(Xtrain, ytrain, { intercept: true });
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -56,7 +54,7 @@ describe('Hyperparameter Tuning', () => {
         const key = JSON.stringify(params);
         callCount[key] = (callCount[key] || 0) + 1;
 
-        return wrapLmModel(lm.fit(Xtrain, ytrain, { intercept: true }));
+        return fitLinearModel(Xtrain, ytrain, { intercept: true });
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -79,7 +77,7 @@ describe('Hyperparameter Tuning', () => {
 
     it('should return results for all combinations', () => {
       const fitFn = (Xtrain, ytrain, params) => {
-        return wrapLmModel(lm.fit(Xtrain, ytrain));
+        return fitLinearModel(Xtrain, ytrain);
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -110,7 +108,7 @@ describe('Hyperparameter Tuning', () => {
         if (params.bad === true) {
           throw new Error('Bad parameter');
         }
-        return wrapLmModel(lm.fit(Xtrain, ytrain));
+        return fitLinearModel(Xtrain, ytrain);
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -137,7 +135,7 @@ describe('Hyperparameter Tuning', () => {
   describe('RandomSearchCV', () => {
     it('should sample random parameters', () => {
       const fitFn = (Xtrain, ytrain, params) => {
-        return wrapLmModel(lm.fit(Xtrain, ytrain));
+        return fitLinearModel(Xtrain, ytrain);
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -162,7 +160,7 @@ describe('Hyperparameter Tuning', () => {
 
     it('should use distribution objects', () => {
       const fitFn = (Xtrain, ytrain, params) => {
-        return wrapLmModel(lm.fit(Xtrain, ytrain));
+        return fitLinearModel(Xtrain, ytrain);
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -191,7 +189,7 @@ describe('Hyperparameter Tuning', () => {
 
     it('should respect nIter parameter', () => {
       const fitFn = (Xtrain, ytrain, params) => {
-        return wrapLmModel(lm.fit(Xtrain, ytrain));
+        return fitLinearModel(Xtrain, ytrain);
       };
 
       const scoreFn = (model, Xtest, ytest) => {
@@ -250,7 +248,7 @@ describe('Hyperparameter Tuning', () => {
 
       const fitFn = (Xtrain, ytrain, params) => {
         // params doesn't affect linear model, but we test the flow
-        return wrapLmModel(lm.fit(Xtrain, ytrain, { intercept: true }));
+        return fitLinearModel(Xtrain, ytrain, { intercept: true });
       };
 
       const scoreFn = (model, Xtest, ytest) => {

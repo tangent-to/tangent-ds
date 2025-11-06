@@ -62,6 +62,21 @@ export class GLM extends Estimator {
   }
 
   /**
+   * Get coefficients (for backward compatibility with lm interface)
+   */
+  get coefficients() {
+    if (!this.fitted) return null;
+    return this._isMixed ? this._model.fixedEffects : this._model.coefficients;
+  }
+
+  /**
+   * Get intercept flag (for backward compatibility)
+   */
+  get intercept() {
+    return this.params.intercept;
+  }
+
+  /**
    * Fit the GLM or GLMM
    *
    * Supports multiple calling conventions:

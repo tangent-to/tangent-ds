@@ -1,15 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import * as interpret from '../src/ml/interpret.js';
-import * as lm from '../src/stats/lm.js';
+import { GLM } from '../src/stats/index.js';
 import * as metrics from '../src/ml/metrics.js';
 
-// Helper to wrap lm model with predict method
-function wrapLmModel(lmResult, withIntercept = true) {
-  return {
-    ...lmResult,
-    intercept: withIntercept,
-    predict: (X) => lm.predict(lmResult.coefficients, X, { intercept: withIntercept })
-  };
+// Helper to create and fit a linear model using GLM
+function fitLinearModel(X, y, options = {}) {
+  const model = new GLM({ family: 'gaussian', intercept: options.intercept !== false });
+  model.fit(X, y);
+  return model;
 }
 
 describe('Model Interpretation', () => {
@@ -28,8 +26,7 @@ describe('Model Interpretation', () => {
   
   describe('featureImportance', () => {
     it('should compute permutation importance', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const importance = interpret.featureImportance(
         model,
@@ -49,8 +46,7 @@ describe('Model Interpretation', () => {
     });
     
     it('should return features sorted by importance', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const importance = interpret.featureImportance(
         model,
@@ -69,7 +65,7 @@ describe('Model Interpretation', () => {
   
   describe('coefficientImportance', () => {
     it('should compute importance from linear model coefficients', () => {
-      const model = lm.fit(X, y, { intercept: true });
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const importance = interpret.coefficientImportance(model);
       
@@ -87,7 +83,7 @@ describe('Model Interpretation', () => {
     });
     
     it('should use feature names if provided', () => {
-      const model = lm.fit(X, y, { intercept: true });
+      const model = fitLinearModel(X, y, { intercept: true });
       model.intercept = true; // Mark that this model has an intercept
       const featureNames = ['age', 'income', 'experience'];
       
@@ -109,8 +105,7 @@ describe('Model Interpretation', () => {
   
   describe('partialDependence', () => {
     it('should compute partial dependence for a feature', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const pd = interpret.partialDependence(model, X, 0, { gridSize: 10 });
       
@@ -130,8 +125,7 @@ describe('Model Interpretation', () => {
     });
     
     it('should respect percentile bounds', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const pd = interpret.partialDependence(model, X, 0, { 
         gridSize: 10, 
@@ -149,8 +143,7 @@ describe('Model Interpretation', () => {
   
   describe('residualPlotData', () => {
     it('should compute residual statistics', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const residuals = interpret.residualPlotData(model, X, y);
       
@@ -165,8 +158,7 @@ describe('Model Interpretation', () => {
     });
     
     it('should compute residuals correctly', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const residuals = interpret.residualPlotData(model, X, y);
       
@@ -177,8 +169,7 @@ describe('Model Interpretation', () => {
     });
     
     it('should compute standardized residuals', () => {
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const residuals = interpret.residualPlotData(model, X, y);
       
@@ -245,7 +236,7 @@ describe('Model Interpretation', () => {
     it('should compute learning curve', () => {
       // Use larger training sizes to avoid singular matrices
       const result = interpret.learningCurve(
-        (Xtrain, ytrain) => wrapLmModel(lm.fit(Xtrain, ytrain, { intercept: true })),
+        (Xtrain, ytrain) => fitLinearModel(Xtrain, ytrain, { intercept: true }),
         (yTrue, yPred) => metrics.r2(yTrue, yPred),
         X,
         y,
@@ -263,7 +254,7 @@ describe('Model Interpretation', () => {
     
     it('should show increasing training sizes', () => {
       const result = interpret.learningCurve(
-        (Xtrain, ytrain) => wrapLmModel(lm.fit(Xtrain, ytrain, { intercept: true })),
+        (Xtrain, ytrain) => fitLinearModel(Xtrain, ytrain, { intercept: true }),
         (yTrue, yPred) => metrics.r2(yTrue, yPred),
         X,
         y,
@@ -277,7 +268,7 @@ describe('Model Interpretation', () => {
     
     it('should return valid scores', () => {
       const result = interpret.learningCurve(
-        (Xtrain, ytrain) => wrapLmModel(lm.fit(Xtrain, ytrain, { intercept: true })),
+        (Xtrain, ytrain) => fitLinearModel(Xtrain, ytrain, { intercept: true }),
         (yTrue, yPred) => metrics.r2(yTrue, yPred),
         X,
         y,

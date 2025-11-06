@@ -3,14 +3,13 @@ import * as plot from '../src/plot/index.js';
 import * as mva from '../src/mva/index.js';
 import * as ml from '../src/ml/index.js';
 import * as interpret from '../src/ml/interpret.js';
-import * as lm from '../src/stats/lm.js';
+import { GLM } from '../src/stats/index.js';
 
-// Helper to wrap lm model with predict method
-function wrapLmModel(lmResult) {
-  return {
-    ...lmResult,
-    predict: (X) => lm.predict(lmResult.coefficients, X, { intercept: true })
-  };
+// Helper to create and fit a linear model using GLM
+function fitLinearModel(X, y, options = {}) {
+  const model = new GLM({ family: 'gaussian', intercept: options.intercept !== false });
+  model.fit(X, y);
+  return model;
 }
 
 describe('Plot Configuration Generators', () => {
@@ -283,8 +282,7 @@ describe('Plot Configuration Generators', () => {
     it('should generate PD plot config', () => {
       const X = [[1], [2], [3], [4], [5]];
       const y = [2, 4, 6, 8, 10];
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const pd = interpret.partialDependence(model, X, 0, { gridSize: 10 });
       const config = plot.plotPartialDependence(pd);
@@ -302,8 +300,7 @@ describe('Plot Configuration Generators', () => {
     it('should use custom feature name', () => {
       const X = [[1], [2], [3]];
       const y = [2, 4, 6];
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const pd = interpret.partialDependence(model, X, 0);
       const config = plot.plotPartialDependence(pd, { featureName: 'Temperature' });
@@ -342,8 +339,7 @@ describe('Plot Configuration Generators', () => {
     it('should generate residual plot config', () => {
       const X = [[1], [2], [3], [4], [5]];
       const y = [2, 4, 6, 8, 10];
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const residuals = interpret.residualPlotData(model, X, y);
       const config = plot.plotResiduals(residuals);
@@ -361,8 +357,7 @@ describe('Plot Configuration Generators', () => {
     it('should support standardized residuals', () => {
       const X = [[1], [2], [3], [4]];
       const y = [2, 4, 6, 8];
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const residuals = interpret.residualPlotData(model, X, y);
       const config = plot.plotResiduals(residuals, { standardized: true });
@@ -375,8 +370,7 @@ describe('Plot Configuration Generators', () => {
     it('should generate Q-Q plot config', () => {
       const X = [[1], [2], [3], [4], [5]];
       const y = [2, 4, 6, 8, 10];
-      const lmResult = lm.fit(X, y, { intercept: true });
-      const model = wrapLmModel(lmResult);
+      const model = fitLinearModel(X, y, { intercept: true });
       
       const residuals = interpret.residualPlotData(model, X, y);
       const config = plot.plotQQ(residuals);
