@@ -34,3 +34,14 @@ export {
 export { createD3DendrogramRenderer } from './renderers/d3Dendrogram.js';
 
 export { plotSilhouette } from './plotSilhouette.js';
+
+// GLM/GLMM diagnostic plots
+export {
+  residualPlot,
+  scaleLocationPlot,
+  qqPlot,
+  residualsLeveragePlot,
+  diagnosticDashboard,
+  effectPlot,
+  partialResidualPlot
+} from './diagnostics.js';

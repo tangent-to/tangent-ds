@@ -13,6 +13,7 @@ import { prepareXY } from '../../core/table.js';
 import { fitGLM, fitGLMM, predictGLM, predictGLMM } from '../glm.js';
 import { createFamily, getCanonicalLink } from '../families.js';
 import { mean } from '../../core/math.js';
+import { applyFormula } from '../../core/formula.js';
 
 export class GLM extends Estimator {
   /**
@@ -68,12 +69,32 @@ export class GLM extends Estimator {
    * - fit(X, y, weights, offset)
    * - fit({ X, y, data })
    * - fit({ X, y, groups, data }) for mixed models
+   * - fit('y ~ x1 + x2', data) - R-style formula
+   * - fit({ formula: 'y ~ x1 + x2', data }) - formula in object
    */
   fit(...args) {
     let X, y, weights, offset, groups, randomEffectsData;
 
+    // Check for formula-based input
+    if (args.length >= 1 && typeof args[0] === 'string') {
+      // Formula string: fit('y ~ x1 + x2', data)
+      const formula = args[0];
+      const data = args[1];
+
+      if (!data) {
+        throw new Error('Data is required when using formula syntax');
+      }
+
+      return this._fitWithFormula(formula, data, args[2] || {});
+    }
+
     // Parse arguments
     if (args.length === 1 && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+      // Check if it's a formula-style object
+      if (args[0].formula) {
+        return this._fitWithFormula(args[0].formula, args[0].data, args[0]);
+      }
+
       // Table-style: { X, y, data, groups, weights, offset }
       const opts = args[0];
 
@@ -133,6 +154,53 @@ export class GLM extends Estimator {
     } else {
       // Fit GLM
       this._model = fitGLM(X, y, options);
+    }
+
+    this.fitted = true;
+    return this;
+  }
+
+  /**
+   * Fit using R-style formula
+   * @private
+   */
+  _fitWithFormula(formula, data, options = {}) {
+    // Parse formula and apply to data
+    const result = applyFormula(formula, data, {
+      intercept: this.params.intercept
+    });
+
+    // Store column names for later use
+    this._columnsX = result.columnNames.filter(c => c !== '(Intercept)');
+    this._columnY = result.parsed.response.variable;
+    this._formula = formula;
+
+    // Extract weights and offset from options if provided
+    const weights = options.weights;
+    const offset = options.offset;
+
+    // Determine if this is a mixed model
+    this._isMixed = !!result.randomEffects;
+
+    // Fit the model
+    const fitOptions = {
+      family: this.params.family,
+      link: this.params.link,
+      weights,
+      offset,
+      intercept: this.params.intercept,
+      maxIter: this.params.maxIter,
+      tol: this.params.tol,
+      regularization: this.params.regularization,
+      dispersion: this.params.dispersion
+    };
+
+    if (this._isMixed) {
+      // Fit GLMM with random effects from formula
+      this._model = fitGLMM(result.X, result.y, result.randomEffects, fitOptions);
+    } else {
+      // Fit GLM
+      this._model = fitGLM(result.X, result.y, fitOptions);
     }
 
     this.fitted = true;

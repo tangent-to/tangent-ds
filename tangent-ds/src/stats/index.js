@@ -18,6 +18,17 @@ import {
   OneWayAnova
 } from './estimators/tests.js';
 
+import {
+  compareModels,
+  likelihoodRatioTest,
+  pairwiseLRT,
+  modelSelectionPlot,
+  aicWeightPlot,
+  coefficientComparisonPlot,
+  crossValidate,
+  crossValidateModels
+} from './model_comparison.js';
+
 // Alias classes under camelCase names for ergonomic construction
 const oneSampleTTest = OneSampleTTest;
 const twoSampleTTest = TwoSampleTTest;
@@ -44,6 +55,16 @@ export {
 
   // Generalized Linear Models (GLM and GLMM)
   GLM,
+
+  // Model comparison and selection
+  compareModels,
+  likelihoodRatioTest,
+  pairwiseLRT,
+  modelSelectionPlot,
+  aicWeightPlot,
+  coefficientComparisonPlot,
+  crossValidate,
+  crossValidateModels,
 
   // Hypothesis test estimator classes
   OneSampleTTest,
