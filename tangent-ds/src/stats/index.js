@@ -10,19 +10,13 @@ import {
   oneWayAnova as oneWayAnovaFn
 } from './tests.js';
 
-import lmClass from './estimators/lm.js';
-import logitClass from './estimators/logit.js';
-import lmmClass from './estimators/lmm.js';
+import { GLM } from './estimators/GLM.js';
 import {
   OneSampleTTest,
   TwoSampleTTest,
   ChiSquareTest,
   OneWayAnova
 } from './estimators/tests.js';
-
-const lm = lmClass;
-const logit = logitClass;
-const lmm = lmmClass;
 
 // Alias classes under camelCase names for ergonomic construction
 const oneSampleTTest = OneSampleTTest;
@@ -48,10 +42,10 @@ export {
   // Hypothesis test helper namespace (functional)
   hypothesis,
 
-  // Estimator-style classes
-  lm,
-  logit,
-  lmm,
+  // Generalized Linear Models (GLM and GLMM)
+  GLM,
+
+  // Hypothesis test estimator classes
   OneSampleTTest,
   TwoSampleTTest,
   ChiSquareTest,

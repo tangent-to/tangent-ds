@@ -4,7 +4,16 @@
  */
 
 import { toMatrix, Matrix } from '../core/linalg.js';
-import * as lm from '../stats/lm.js';
+import { fitGLM as lmFit, predictGLM as lmPredict } from '../stats/glm.js';
+
+// Minimal lm namespace for compatibility
+const lm = {
+  fit: (X, y, opts) => lmFit(X, y, { ...opts, family: 'gaussian' }),
+  predict: (coefficients, X, opts) => {
+    const model = { coefficients, family: 'gaussian', link: 'identity', intercept: opts?.intercept !== false, p: coefficients.length };
+    return lmPredict(model, X, opts);
+  }
+};
 
 /**
  * Create polynomial features from input

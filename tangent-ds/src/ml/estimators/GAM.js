@@ -5,8 +5,29 @@
 
 import { Regressor, Classifier } from '../../core/estimators/estimator.js';
 import { prepareXY, prepareX } from '../../core/table.js';
-import * as lm from '../../stats/lm.js';
-import * as logit from '../../stats/logit.js';
+import { fitGLM, predictGLM } from '../../stats/glm.js';
+
+// Minimal lm/logit namespaces for compatibility
+const lm = {
+  fit: (X, y, opts) => fitGLM(X, y, { ...opts, family: 'gaussian' }),
+  predict: (coefficients, X, opts) => {
+    const model = { coefficients, family: 'gaussian', link: 'identity', intercept: opts?.intercept !== false, p: coefficients.length };
+    return predictGLM(model, X, opts);
+  },
+  summary: (model) => ({
+    coefficients: model.coefficients,
+    rSquared: model.pseudoR2 || model.rSquared,
+    adjRSquared: model.adjRSquared
+  })
+};
+
+const logit = {
+  fit: (X, y, opts) => fitGLM(X, y, { ...opts, family: 'binomial', link: 'logit' }),
+  predict: (coefficients, X, opts) => {
+    const model = { coefficients, family: 'binomial', link: 'logit', intercept: opts?.intercept !== false, p: coefficients.length };
+    return predictGLM(model, X, opts);
+  }
+};
 
 function toNumericMatrix(X) {
   return X.map((row) => Array.isArray(row) ? row.map(Number) : [Number(row)]);
