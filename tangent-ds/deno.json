@@ -1,0 +1,39 @@
+{
+  "name": "@tangent-to/ds",
+  "version": "0.1.28",
+  "exports": "./src/index.js",
+  "tasks": {
+    "test": "deno test --allow-read",
+    "lint": "deno lint src/",
+    "fmt": "deno fmt src/"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    },
+    "exclude": [
+      "dist/",
+      "node_modules/",
+      "coverage/",
+      "examples/"
+    ]
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve",
+    "exclude": [
+      "dist/",
+      "node_modules/",
+      "coverage/"
+    ]
+  },
+  "imports": {
+    "ml-matrix": "npm:ml-matrix@^6.11.1",
+    "simple-statistics": "npm:simple-statistics@^7.8.3",
+    "@observablehq/plot": "npm:@observablehq/plot@^0.6.0"
+  }
+}

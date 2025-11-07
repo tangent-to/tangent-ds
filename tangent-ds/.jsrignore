@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/
+
+# Tests
+tests/
+**/*.test.js
+**/*.spec.js
+vitest.config.js
+coverage/
+
+# Examples and docs generation
+examples/
+scripts/
+docs/
+
+# IDE and OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.gitconfig
+.github/
+
+# NPM specific
+.npmignore
+verify-package.js
+
+# TypeDoc
+tsconfig.typedoc.json

@@ -27,7 +27,12 @@
     "watch": "esbuild src/index.js --bundle --platform=browser --format=esm --target=es2020 --outfile=dist/index.js --sourcemap --keep-names --watch",
     "dev": "npm run watch",
     "verify": "node verify-package.js",
-    "docs:generate": "node scripts/generate-docs.js"
+    "docs:generate": "node scripts/generate-docs.js",
+    "jsr:publish": "deno publish --allow-dirty",
+    "jsr:publish:dry-run": "deno publish --dry-run --allow-dirty",
+    "deno:lint": "deno lint src/",
+    "deno:fmt": "deno fmt src/",
+    "deno:check": "deno check src/index.js"
   },
   "keywords": [
     "data-science",
