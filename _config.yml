@@ -1,0 +1,67 @@
+# Jekyll configuration for @tangent.to/ds documentation
+
+# Site settings
+title: "@tangent.to/ds"
+description: "A minimalist, browser-friendly data science library in modern JavaScript (ESM)"
+baseurl: "/tangent-ds" # The subpath of your site, e.g. /blog
+url: "https://tangent-to.github.io" # The base hostname & protocol
+
+# Theme
+theme: jekyll-theme-cayman
+# Alternative themes: minima, jekyll-theme-slate, jekyll-theme-minimal
+
+# Build settings
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# Navigation
+navigation:
+  - title: Home
+    url: /
+  - title: API Reference
+    url: /API.html
+  - title: Core
+    url: /core.html
+  - title: Stats
+    url: /stats.html
+  - title: ML
+    url: /ml.html
+  - title: MVA
+    url: /mva.html
+  - title: Plot
+    url: /plot.html
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - .sass-cache
+  - .jekyll-cache
+
+# Plugins
+plugins:
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-readme-index
+  - jekyll-titles-from-headings
+
+# Plugin settings
+relative_links:
+  enabled: true
+  collections: false
+
+optional_front_matter:
+  remove_originals: false
+
+titles_from_headings:
+  enabled: true
+  strip_title: false
+  collections: false
+
+# GitHub metadata
+repository: tangent-to/tangent-ds
+github_username: tangent-to

@@ -1,1 +1,0 @@
-"use strict";(globalThis.webpackChunk=globalThis.webpackChunk||[]).push([[1903],{1912:s=>{s.exports=JSON.parse('{"blogBasePath":"/tangent-ds/blog","blogTitle":"Blog","authorsListPath":"/tangent-ds/blog/authors"}')}}]);
