@@ -47,7 +47,7 @@ const anovaMass = ds.stats.hypothesis.oneWayAnova(
 console.log('One-way ANOVA mass ~ species:', anovaMass);
 
 // -- Linear model --
-const lm = new ds.stats.lm({
+const lm = new ds.stats.GLM({ family: 'gaussian' }{
   formula: 'BodyMass ~ Species + Sex + FlipperLength'
 });
 
@@ -61,7 +61,7 @@ await lm.fit(penguinsClean.map((p) => ({
 console.log('Linear model coefficients:', lm.coefficients());
 
 // -- Logistic regression --
-const logit = new ds.stats.logit({
+const logit = new ds.stats.GLM({ family: 'binomial', link: 'logit' }{
   formula: 'Sex ~ BodyMass + BeakLength + Species'
 });
 
@@ -75,7 +75,8 @@ await logit.fit(penguinsClean.map((p) => ({
 console.log('Logistic regression summary:', logit.summary());
 
 // -- Mixed-effects model demonstration (simple random intercept) --
-const lmm = new ds.stats.lmm({
+const lmm = new ds.stats.GLM({
+  family: 'gaussian',
   formula: 'BodyMass ~ Species + (1 | Island)'
 });
 

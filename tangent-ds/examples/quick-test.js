@@ -15,9 +15,9 @@ try {
     const pdfValue = stats.normal.pdf(0, { mean: 0, sd: 1 });
     const sample = stats.normal.quantile(Math.random()); // Use quantile for sampling
 
-    // 3. Regression
-    console.log('✓ Linear regression');
-    const lm = new stats.lm();
+    // 3. Regression (GLM with Gaussian family)
+    console.log('✓ Linear regression (GLM)');
+    const lm = new stats.GLM({ family: 'gaussian' });
     lm.fit([[1], [2], [3]], [2, 4, 6]);
     const pred = lm.predict([[4]]);
 

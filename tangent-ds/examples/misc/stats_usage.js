@@ -35,7 +35,7 @@ There might be missing values in the dataset, so we filter out rows with missing
 */
 
 // %% [javascript]
-const lr = new ds.stats.lm({ intercept: true });
+const lr = new ds.stats.GLM({ family: 'gaussian', intercept: true });
 lr.fit({
   X: ["Miles_per_Gallon"],
   y: "Weight_in_lbs",
@@ -177,7 +177,9 @@ const weatherHasRain = weatherData.map((d) => ({
   ...d,
   hasRain: d.precipitation > 0 ? 1 : 0,
 }));
-const logitEstimator = new ds.stats.logit({
+const logitEstimator = new ds.stats.GLM({
+  family: 'binomial',
+  link: 'logit',
   maxIter: 100,
   intercept: true
 });
@@ -211,8 +213,11 @@ const Xmixed = barleyFiltered.map((d) => [d.year === 1931 ? 0 : 1]);
 const ymixed = barleyFiltered.map((d) => d.yield);
 const groups = barleyFiltered.map((d) => d.site);
 
-const lmmEstimator = new ds.stats.lmm();
-lmmEstimator.fit(Xmixed, ymixed, groups);
+const lmmEstimator = new ds.stats.GLM({
+  family: 'gaussian',
+  randomEffects: { intercept: groups }
+});
+lmmEstimator.fit(Xmixed, ymixed);
 const lmmModel = lmmEstimator.model;
 console.log("Modeling barley yield by year with site random effects");
 console.log("Fixed effects:", lmmModel.fixedEffects.map((e) => e.toFixed(4)));

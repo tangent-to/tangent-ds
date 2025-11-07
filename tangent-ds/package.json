@@ -27,9 +27,7 @@
     "watch": "esbuild src/index.js --bundle --platform=browser --format=esm --target=es2020 --outfile=dist/index.js --sourcemap --keep-names --watch",
     "dev": "npm run watch",
     "verify": "node verify-package.js",
-    "docs:dev": "cd docs && npm start",
-    "docs:build": "cd docs && npm run build",
-    "docs:serve": "cd docs && npm run serve"
+    "docs:generate": "node scripts/generate-docs.js"
   },
   "keywords": [
     "data-science",
@@ -43,6 +41,7 @@
   ],
   "author": "Essi Parent",
   "license": "GPL-3.0",
+  "homepage": "https://tangent-to.github.io/tangent-ds/",
   "repository": {
     "type": "git",
     "url": "https://github.com/tangent-to/tangent-ds"

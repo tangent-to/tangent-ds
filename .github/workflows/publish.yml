@@ -62,20 +62,19 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd tangent-ds/docs
+          cd tangent-ds
           npm ci
 
-      - name: Build documentation site
+      - name: Generate documentation
         run: |
-          cd tangent-ds/docs
-          npm run build
-        env:
-          SKIP_GENERATE_API: 1
+          cd tangent-ds
+          npm run docs:generate
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./tangent-ds/docs/build
+          publish_dir: ./tangent-ds/docs
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
+          enable_jekyll: true

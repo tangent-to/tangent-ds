@@ -54,7 +54,7 @@ console.log('Test size:', split.XTest.length);
 
 // ## Train Model
 console.log('\n--- Training Linear Model ---');
-const model = new stats.lm({ intercept: true });
+const model = new stats.GLM({ family: 'gaussian' }{ intercept: true });
 model.fit(split.XTrain, split.yTrain);
 const lmSummary = model.summary();
 console.log('Model trained');
@@ -184,7 +184,7 @@ console.log('\n--- Cross-Validation ---');
 const folds = ml.validation.kFold(X, y, 5, true);
 const cvResults = ml.validation.crossValidate(
   (Xtrain, ytrain) => {
-    const estimator = new stats.lm({ intercept: true });
+    const estimator = new stats.GLM({ family: 'gaussian' }{ intercept: true });
     estimator.fit(Xtrain, ytrain);
     return estimator;
   },

@@ -41,7 +41,7 @@ console.log('Dataset shape:', X.length, 'x', X[0].length);
 
 // %% [javascript]
 // ## Train Linear Model
-const linearModel = new stats.lm({ intercept: true });
+const linearModel = new stats.GLM({ family: 'gaussian' }{ intercept: true });
 linearModel.fit(X, y);
 const modelSummary = linearModel.summary();
 const model = linearModel;
@@ -134,7 +134,7 @@ console.log('\n[Plot Config] Correlation Matrix:', corrPlot.type);
 console.log('\n=== Learning Curve ===');
 const learningCurve = ml.interpret.learningCurve(
   (Xtrain, ytrain) => {
-    const learner = new stats.lm({ intercept: true });
+    const learner = new stats.GLM({ family: 'gaussian' }{ intercept: true });
     learner.fit(Xtrain, ytrain);
     return learner;
   },

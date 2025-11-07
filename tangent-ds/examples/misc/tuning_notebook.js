@@ -52,7 +52,7 @@ function createPolyFeatures(X, degree) {
 const fitFn = (Xtrain, ytrain, params) => {
   const degree = params.degree;
   const XPoly = createPolyFeatures(Xtrain, degree);
-  const model = new stats.lm({ intercept: true });
+  const model = new stats.GLM({ family: 'gaussian' }{ intercept: true });
   model.fit(XPoly, ytrain);
   model._polyDegree = degree;
   return model;
@@ -94,7 +94,7 @@ console.log('=== RandomSearchCV: Exploring Parameter Space ===\n');
 const fitFnRandom = (Xtrain, ytrain, params) => {
   // Just use linear model for simplicity
   // In practice, params would control model complexity
-  const model = new stats.lm({ intercept: true });
+  const model = new stats.GLM({ family: 'gaussian' }{ intercept: true });
   model.fit(Xtrain, ytrain);
   return model;
 };

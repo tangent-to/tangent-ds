@@ -151,10 +151,11 @@ export function fitGLM(X, y, options = {}) {
     logLikelihood: logLik,
     aic,
     bic,
-    iterations: iteration + 1,
+    iterations: converged ? iteration + 1 : iteration,
     converged,
     n,
     p: ncoef,
+    df: ncoef,
     dfResidual: n - ncoef,
     family: familyObj.family,
     link: familyObj.link.name,
@@ -508,11 +509,12 @@ export function fitGLMM(X, y, randomEffects, options = {}) {
     logLikelihood: logLik,
     aic,
     bic,
-    iterations: iteration + 1,
+    iterations: converged ? iteration + 1 : iteration,
     converged,
     n,
     nFixedEffects: nFixedCoef,
     nRandomEffects: nRandomCoef,
+    df: nParams,
     dfResidual: n - nFixedCoef,
     family: familyObj.family,
     link: familyObj.link.name,
@@ -688,9 +690,16 @@ function updateVarianceComponents(u, groupInfo) {
  * Compute marginal log-likelihood via Laplace approximation
  */
 function computeMarginalLogLikelihood(y, mu, u, theta, weights, family, groupInfo) {
+  const n = y.length;
+
   // Conditional log-likelihood: log p(y|β,u)
   const deviance = family.deviance(y, mu, weights);
   let logLik = -deviance / 2;
+
+  // Add constant term for Gaussian likelihood
+  if (family.family === 'gaussian') {
+    logLik -= (n / 2) * Math.log(2 * Math.PI);
+  }
 
   // Random effects penalty: -0.5 * u'D^{-1}u
   for (let i = 0; i < groupInfo.length; i++) {
@@ -855,7 +864,7 @@ function buildRandomEffectsMatrixForPrediction(n, randomEffectsData, groupInfo, 
 
   // Handle random intercepts
   const interceptInfo = groupInfo.find(g => g.type === 'intercept');
-  if (interceptInfo && randomEffectsData.intercept) {
+  if (interceptInfo && randomEffectsData && randomEffectsData.intercept) {
     const groups = randomEffectsData.intercept;
     for (let i = 0; i < n; i++) {
       const group = groups[i];
@@ -872,7 +881,7 @@ function buildRandomEffectsMatrixForPrediction(n, randomEffectsData, groupInfo, 
   // Handle random slopes
   for (const info of groupInfo.filter(g => g.type === 'slope')) {
     const varName = info.variable;
-    if (randomEffectsData.slopes && randomEffectsData.slopes[varName]) {
+    if (randomEffectsData && randomEffectsData.slopes && randomEffectsData.slopes[varName]) {
       const { groups, values } = randomEffectsData.slopes[varName];
       for (let i = 0; i < n; i++) {
         const group = groups[i];

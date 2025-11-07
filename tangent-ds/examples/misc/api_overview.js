@@ -216,7 +216,7 @@ console.log('\nFeatures standardized (μ=0, σ=1)');
 
 // Train linear model (in practice, we'd use polynomial or MLP)
 // For demonstration, we'll show the flow
-const abundanceEstimator = new stats.lm({ intercept: true });
+const abundanceEstimator = new stats.GLM({ family: 'gaussian' }{ intercept: true });
 abundanceEstimator.fit(XTrainScaled, split.yTrain);
 const abundanceSummary = abundanceEstimator.summary();
 
@@ -368,7 +368,7 @@ Find optimal model configuration through cross-validation.
 // Simple grid search (demonstration)
 const gridResult = ml.tuning.GridSearchCV(
   (Xtrain, ytrain) => {
-    const model = new stats.lm({ intercept: true });
+    const model = new stats.GLM({ family: 'gaussian' }{ intercept: true });
     model.fit(Xtrain, ytrain);
     return model;
   },

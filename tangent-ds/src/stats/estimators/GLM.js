@@ -62,6 +62,21 @@ export class GLM extends Estimator {
   }
 
   /**
+   * Get coefficients (for backward compatibility with lm interface)
+   */
+  get coefficients() {
+    if (!this.fitted) return null;
+    return this._isMixed ? this._model.fixedEffects : this._model.coefficients;
+  }
+
+  /**
+   * Get intercept flag (for backward compatibility)
+   */
+  get intercept() {
+    return this.params.intercept;
+  }
+
+  /**
    * Fit the GLM or GLMM
    *
    * Supports multiple calling conventions:
@@ -183,12 +198,13 @@ export class GLM extends Estimator {
     this._isMixed = !!result.randomEffects;
 
     // Fit the model
+    // Note: result.X already includes intercept from applyFormula, so don't add it again
     const fitOptions = {
       family: this.params.family,
       link: this.params.link,
       weights,
       offset,
-      intercept: this.params.intercept,
+      intercept: false, // intercept already in result.X from applyFormula
       maxIter: this.params.maxIter,
       tol: this.params.tol,
       regularization: this.params.regularization,
@@ -345,8 +361,8 @@ export class GLM extends Estimator {
     }
 
     output += `\n`;
-    output += `Null deviance: ${m.nullDeviance.toFixed(4)} on ${m.n - 1} degrees of freedom\n`;
-    output += `Residual deviance: ${m.deviance.toFixed(4)} on ${m.dfResidual} degrees of freedom\n`;
+    output += `Null Deviance: ${m.nullDeviance.toFixed(4)} on ${m.n - 1} degrees of freedom\n`;
+    output += `Residual Deviance: ${m.deviance.toFixed(4)} on ${m.dfResidual} degrees of freedom\n`;
     output += `AIC: ${m.aic.toFixed(2)}\n`;
     output += `BIC: ${m.bic.toFixed(2)}\n`;
     output += `Dispersion: ${m.dispersion.toFixed(4)}\n`;
@@ -400,11 +416,11 @@ export class GLM extends Estimator {
     output += `Log-Likelihood: ${m.logLikelihood.toFixed(2)}\n`;
     output += `Iterations: ${m.iterations}, Converged: ${m.converged}\n`;
 
-    output += `\n⚠️  p-values for fixed effects in mixed models are based on questionable\n`;
-    output += `    assumptions, can be misleading, and there is no single universally\n`;
-    output += `    agreed, correct method for computing them in the frequentist\n`;
-    output += `    mixed-effects framework. Prefer effect estimates ± CIs and variance\n`;
-    output += `    components.\n`;
+    output += `\n⚠️  Note: p-values for fixed effects in mixed models are based on\n`;
+    output += `    questionable assumptions, can be misleading, and there is no single\n`;
+    output += `    universally agreed, correct method for computing them in the\n`;
+    output += `    frequentist mixed-effects framework. Prefer effect estimates ± CIs\n`;
+    output += `    and variance components.\n`;
 
     return output;
   }
