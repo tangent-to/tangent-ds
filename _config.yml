@@ -3,7 +3,7 @@
 # Site settings
 title: "@tangent.to/ds"
 description: "A minimalist, browser-friendly data science library in modern JavaScript (ESM)"
-baseurl: "/tangent-ds" # The subpath of your site, e.g. /blog
+baseurl: "/ds" # The subpath of your site, e.g. /blog
 url: "https://tangent-to.github.io" # The base hostname & protocol
 
 # Theme
@@ -63,5 +63,5 @@ titles_from_headings:
   collections: false
 
 # GitHub metadata
-repository: tangent-to/tangent-ds
+repository: tangent-to/ds
 github_username: tangent-to
