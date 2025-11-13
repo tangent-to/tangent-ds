@@ -1,6 +1,5 @@
 TODO
 - planned features
-    - implement Tukey HSD test
     - ml: y can take multiple targets (one model per target, for now)
     - implement tensorflowjs
     - implement xgboost
@@ -11,6 +10,7 @@ DOING
 
 
 DONE
+- implement Tukey HSD test
 - scikit-learn's-like API across the whole pakcage, ml, mvs and plot
 - fix logistic regression
 - fix kmeans

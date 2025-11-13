@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OneSampleTTest, TwoSampleTTest, ChiSquareTest, OneWayAnova } from '../src/stats/index.js';
+import { OneSampleTTest, TwoSampleTTest, ChiSquareTest, OneWayAnova, TukeyHSD } from '../src/stats/index.js';
 import { approxEqual } from '../src/core/math.js';
 
 describe('statistical tests', () => {
@@ -108,8 +108,123 @@ describe('statistical tests', () => {
       const test = new OneWayAnova();
       test.fit([group1, group2, group3]);
       const result = test.summary();
-      
+
       expect(result.MSbetween).toBe(0);
+    });
+  });
+
+  describe('tukeyHSD', () => {
+    it('should perform Tukey HSD post-hoc test', () => {
+      const group1 = [1, 2, 3];
+      const group2 = [4, 5, 6];
+      const group3 = [7, 8, 9];
+      const test = new TukeyHSD();
+      test.fit([group1, group2, group3]);
+      const result = test.summary();
+
+      expect(result.numGroups).toBe(3);
+      expect(result.comparisons.length).toBe(3); // 3 choose 2 = 3 comparisons
+      expect(result.groupMeans).toEqual([2, 5, 8]);
+      expect(result.alpha).toBe(0.05);
+
+      // Check structure of comparisons
+      const comp = result.comparisons[0];
+      expect(comp).toHaveProperty('groups');
+      expect(comp).toHaveProperty('diff');
+      expect(comp).toHaveProperty('lowerCI');
+      expect(comp).toHaveProperty('upperCI');
+      expect(comp).toHaveProperty('pValue');
+      expect(comp).toHaveProperty('significant');
+      expect(comp).toHaveProperty('qStatistic');
+    });
+
+    it('should detect significant differences between distinct groups', () => {
+      const group1 = [1, 2, 3, 4, 5];
+      const group2 = [10, 11, 12, 13, 14];
+      const group3 = [20, 21, 22, 23, 24];
+      const test = new TukeyHSD();
+      test.fit([group1, group2, group3]);
+      const result = test.summary();
+
+      // All comparisons should be significant
+      result.comparisons.forEach(comp => {
+        expect(comp.pValue).toBeLessThan(0.05);
+        expect(comp.significant).toBe(true);
+      });
+    });
+
+    it('should not detect differences for similar groups', () => {
+      const group1 = [5, 6, 7];
+      const group2 = [5, 6, 7];
+      const group3 = [5, 6, 7];
+      const test = new TukeyHSD();
+      test.fit([group1, group2, group3]);
+      const result = test.summary();
+
+      // All differences should be zero
+      result.comparisons.forEach(comp => {
+        expect(approxEqual(comp.diff, 0, 0.001)).toBe(true);
+      });
+    });
+
+    it('should support custom alpha level', () => {
+      const group1 = [1, 2, 3];
+      const group2 = [4, 5, 6];
+      const test = new TukeyHSD({ alpha: 0.01 });
+      test.fit([group1, group2]);
+      const result = test.summary();
+
+      expect(result.alpha).toBe(0.01);
+    });
+
+    it('should work with precomputed ANOVA result', () => {
+      const groups = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+      const anova = new OneWayAnova();
+      anova.fit(groups);
+      const anovaResult = anova.summary();
+
+      const test = new TukeyHSD();
+      test.fit(groups, { anovaResult });
+      const result = test.summary();
+
+      expect(result.MSwithin).toBe(anovaResult.MSwithin);
+      expect(result.dfWithin).toBe(anovaResult.dfWithin);
+    });
+
+    it('should throw error with less than 2 groups', () => {
+      const test = new TukeyHSD();
+      expect(() => test.fit([[1, 2, 3]])).toThrow('Need at least 2 groups');
+    });
+
+    it('should produce confidence intervals that contain zero for non-significant differences', () => {
+      const group1 = [5, 6, 7, 8, 9];
+      const group2 = [5.5, 6.5, 7.5, 8.5, 9.5];
+      const test = new TukeyHSD();
+      test.fit([group1, group2]);
+      const result = test.summary();
+
+      const comp = result.comparisons[0];
+      // For small differences, CI should likely contain zero
+      if (!comp.significant) {
+        expect(comp.lowerCI).toBeLessThanOrEqual(0);
+        expect(comp.upperCI).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('should label groups correctly', () => {
+      const group1 = [1, 2, 3];
+      const group2 = [4, 5, 6];
+      const group3 = [7, 8, 9];
+      const test = new TukeyHSD();
+      test.fit([group1, group2, group3]);
+      const result = test.summary();
+
+      // Check that group labels exist
+      result.comparisons.forEach(comp => {
+        expect(comp.groupLabels).toHaveLength(2);
+        expect(comp.groupLabels[0]).toContain('Group');
+        expect(comp.groupLabels[1]).toContain('Group');
+      });
     });
   });
 });

@@ -4,7 +4,8 @@ import {
   oneSampleTTest as oneSampleTTestFn,
   twoSampleTTest as twoSampleTTestFn,
   chiSquareTest as chiSquareTestFn,
-  oneWayAnova as oneWayAnovaFn
+  oneWayAnova as oneWayAnovaFn,
+  tukeyHSD as tukeyHSDFn
 } from '../tests.js';
 
 function ensureNumeric(value, columnName) {
@@ -264,15 +265,53 @@ export class ChiSquareTest extends StatisticalTest {
   }
 }
 
+const TUKEY_HSD_DEFAULTS = {
+  alpha: 0.05,
+  omit_missing: true
+};
+
+export class TukeyHSD extends StatisticalTest {
+  fit(groups, opts = {}) {
+    let samples = groups;
+    let options = { ...TUKEY_HSD_DEFAULTS, ...this.params, ...opts };
+
+    if (
+      groups &&
+      typeof groups === 'object' &&
+      !Array.isArray(groups)
+    ) {
+      if (!groups.data || !groups.groups || !groups.value) {
+        throw new Error('TukeyHSD declarative usage requires `data`, `groups`, and `value`.');
+      }
+      options = { ...options, ...groups };
+      const rows = normalize(groups.data);
+      samples = splitGroups(rows, groups.groups, groups.value, options.omit_missing);
+    }
+
+    if (!Array.isArray(samples) || samples.length === 0 || !Array.isArray(samples[0])) {
+      throw new Error('TukeyHSD.fit expects an array of numeric arrays or a declarative object.');
+    }
+
+    this.result = tukeyHSDFn(samples, {
+      alpha: options.alpha,
+      anovaResult: options.anovaResult
+    });
+    this.fitted = true;
+    return this;
+  }
+}
+
 // Attach functional helpers to the classes to keep a single touchpoint.
 Object.assign(OneSampleTTest, { compute: oneSampleTTestFn });
 Object.assign(TwoSampleTTest, { compute: twoSampleTTestFn });
 Object.assign(OneWayAnova, { compute: oneWayAnovaFn });
 Object.assign(ChiSquareTest, { compute: chiSquareTestFn });
+Object.assign(TukeyHSD, { compute: tukeyHSDFn });
 
 export default {
   OneSampleTTest,
   TwoSampleTTest,
   OneWayAnova,
-  ChiSquareTest
+  ChiSquareTest,
+  TukeyHSD
 };

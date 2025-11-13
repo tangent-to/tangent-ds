@@ -229,8 +229,139 @@ export function oneWayAnova(groups) {
  */
 function fCDF(f, d1, d2) {
   if (f <= 0) return 0;
-  
+
   // Very rough approximation using beta distribution relationship
   const x = d2 / (d2 + d1 * f);
   return 1 - incompleteBeta(x, d2 / 2, d1 / 2);
+}
+
+// ============= Tukey HSD (Post-hoc test) =============
+
+/**
+ * Studentized range distribution CDF approximation
+ * @param {number} q - Studentized range statistic
+ * @param {number} k - Number of groups
+ * @param {number} df - Degrees of freedom
+ * @returns {number} Cumulative probability
+ */
+function qrangeCDF(q, k, df) {
+  if (q <= 0) return 0;
+
+  // Approximation using normal distribution for large df
+  // For simplicity, we use a conservative approximation
+  // More accurate implementations would use specialized algorithms
+
+  // Transform q to approximate normal
+  const z = (q - Math.sqrt(2 * Math.log(k))) / Math.sqrt(1 / df);
+  const p = normal.cdf(z, { mean: 0, sd: 1 });
+
+  // Adjust for number of comparisons
+  return Math.pow(p, k - 1);
+}
+
+/**
+ * Tukey's Honestly Significant Difference (HSD) test
+ * Post-hoc test for pairwise comparisons after ANOVA
+ *
+ * @param {Array<Array<number>>} groups - Array of group samples
+ * @param {Object} options - {alpha: significance level (default 0.05), anovaResult: optional precomputed ANOVA result}
+ * @returns {Object} {
+ *   comparisons: Array of {groups: [i,j], diff, lowerCI, upperCI, pValue, significant},
+ *   groupMeans: Array of group means,
+ *   groupNames: Array of group indices,
+ *   MSwithin: Mean square within groups,
+ *   dfWithin: Degrees of freedom,
+ *   alpha: Significance level
+ * }
+ */
+export function tukeyHSD(groups, { alpha = 0.05, anovaResult = null } = {}) {
+  if (groups.length < 2) {
+    throw new Error('Need at least 2 groups for Tukey HSD test');
+  }
+
+  const k = groups.length;
+  const groupSizes = groups.map(g => g.length);
+  const n = groupSizes.reduce((a, b) => a + b, 0);
+
+  // Compute or reuse ANOVA results
+  let MSwithin, dfWithin;
+  if (anovaResult) {
+    MSwithin = anovaResult.MSwithin;
+    dfWithin = anovaResult.dfWithin;
+  } else {
+    const anovaRes = oneWayAnova(groups);
+    MSwithin = anovaRes.MSwithin;
+    dfWithin = anovaRes.dfWithin;
+  }
+
+  // Compute group means
+  const groupMeans = groups.map(g => mean(g));
+
+  // Perform all pairwise comparisons
+  const comparisons = [];
+
+  for (let i = 0; i < k; i++) {
+    for (let j = i + 1; j < k; j++) {
+      const ni = groupSizes[i];
+      const nj = groupSizes[j];
+      const meanDiff = groupMeans[i] - groupMeans[j];
+
+      // Standard error for the difference
+      const se = Math.sqrt(MSwithin * (1 / ni + 1 / nj));
+
+      // Studentized range statistic
+      const q = Math.abs(meanDiff) / (Math.sqrt(MSwithin / 2 * (1 / ni + 1 / nj)));
+
+      // p-value (approximation)
+      const pValue = 1 - qrangeCDF(q, k, dfWithin);
+
+      // Critical value approximation
+      // For accurate results, this should use studentized range tables
+      // Here we use a conservative approximation based on t-distribution
+      const tCrit = approximateQCritical(alpha, k, dfWithin);
+      const margin = tCrit * se;
+
+      comparisons.push({
+        groups: [i, j],
+        groupLabels: [`Group ${i}`, `Group ${j}`],
+        diff: meanDiff,
+        lowerCI: meanDiff - margin,
+        upperCI: meanDiff + margin,
+        pValue: Math.max(0, Math.min(1, pValue)),
+        significant: pValue < alpha,
+        qStatistic: q
+      });
+    }
+  }
+
+  return {
+    comparisons,
+    groupMeans,
+    groupNames: groups.map((_, i) => `Group ${i}`),
+    MSwithin,
+    dfWithin,
+    alpha,
+    numGroups: k
+  };
+}
+
+/**
+ * Approximate critical value for studentized range distribution
+ * This is a simplified approximation; production code should use tables or more accurate methods
+ */
+function approximateQCritical(alpha, k, df) {
+  // Conservative approximation using t-distribution with Bonferroni-like adjustment
+  // Tukey's q is approximately sqrt(2) * t for large df
+  const numComparisons = k * (k - 1) / 2;
+  const adjustedAlpha = alpha / numComparisons;
+
+  // Approximate t critical value
+  // For two-tailed test at adjusted alpha
+  const z = Math.abs(normal.quantile(adjustedAlpha / 2, { mean: 0, sd: 1 }));
+
+  // Adjust for df using t-distribution approximation
+  const tCrit = z * Math.sqrt((df + 1) / df);
+
+  // Scale for studentized range (approximately sqrt(2) times t for pairwise)
+  return tCrit * Math.sqrt(2);
 }

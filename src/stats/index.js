@@ -7,7 +7,8 @@ import {
   oneSampleTTest as oneSampleTTestFn,
   twoSampleTTest as twoSampleTTestFn,
   chiSquareTest as chiSquareTestFn,
-  oneWayAnova as oneWayAnovaFn
+  oneWayAnova as oneWayAnovaFn,
+  tukeyHSD as tukeyHSDFn
 } from './tests.js';
 
 import { GLM } from './estimators/GLM.js';
@@ -15,7 +16,8 @@ import {
   OneSampleTTest,
   TwoSampleTTest,
   ChiSquareTest,
-  OneWayAnova
+  OneWayAnova,
+  TukeyHSD
 } from './estimators/tests.js';
 
 import {
@@ -34,13 +36,15 @@ const oneSampleTTest = OneSampleTTest;
 const twoSampleTTest = TwoSampleTTest;
 const chiSquareTest = ChiSquareTest;
 const oneWayAnova = OneWayAnova;
+const tukeyHSD = TukeyHSD;
 
 // Preserve functional helpers grouped under a namespace for direct usage
 const hypothesis = {
   oneSampleTTest: oneSampleTTestFn,
   twoSampleTTest: twoSampleTTestFn,
   chiSquareTest: chiSquareTestFn,
-  oneWayAnova: oneWayAnovaFn
+  oneWayAnova: oneWayAnovaFn,
+  tukeyHSD: tukeyHSDFn
 };
 
 export {
@@ -71,8 +75,10 @@ export {
   TwoSampleTTest,
   ChiSquareTest,
   OneWayAnova,
+  TukeyHSD,
   oneSampleTTest,
   twoSampleTTest,
   chiSquareTest,
-  oneWayAnova
+  oneWayAnova,
+  tukeyHSD
 };
