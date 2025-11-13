@@ -17,7 +17,12 @@ import {
   omegaSquared,
   bonferroni,
   holmBonferroni,
-  fdr
+  fdr,
+  leveneTest,
+  shapiroWilk,
+  pearsonCorrelation,
+  spearmanCorrelation,
+  fisherExactTest
 } from './tests.js';
 
 import { GLM } from './estimators/GLM.js';
@@ -112,5 +117,16 @@ export {
   // Multiple testing corrections
   bonferroni,
   holmBonferroni,
-  fdr
+  fdr,
+
+  // Assumption testing
+  leveneTest,
+  shapiroWilk,
+
+  // Correlation tests
+  pearsonCorrelation,
+  spearmanCorrelation,
+
+  // Contingency tables
+  fisherExactTest
 };

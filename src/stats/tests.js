@@ -695,6 +695,355 @@ export function omegaSquared(anovaResult) {
   return (SSbetween - dfBetween * MSwithin) / (SStotal + MSwithin);
 }
 
+// ============= Assumption Testing =============
+
+/**
+ * Levene's test for equality of variances
+ * Tests homogeneity of variance assumption (homoscedasticity)
+ * @param {Array<Array<number>>} groups - Array of group samples
+ * @param {Object} options - {center: 'mean'|'median'|'trimmed', trim: trim proportion for trimmed mean (default 0.1)}
+ * @returns {Object} {statistic, pValue, df1, df2}
+ */
+export function leveneTest(groups, { center = 'median', trim = 0.1 } = {}) {
+  if (groups.length < 2) {
+    throw new Error('Need at least 2 groups');
+  }
+
+  const k = groups.length;
+  const groupSizes = groups.map(g => g.length);
+  const n = groupSizes.reduce((a, b) => a + b, 0);
+
+  // Compute center for each group
+  const centers = groups.map(g => {
+    if (center === 'mean') {
+      return mean(g);
+    } else if (center === 'median') {
+      const sorted = [...g].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+    } else if (center === 'trimmed') {
+      const sorted = [...g].sort((a, b) => a - b);
+      const trimCount = Math.floor(sorted.length * trim);
+      const trimmed = sorted.slice(trimCount, sorted.length - trimCount);
+      return mean(trimmed);
+    }
+    throw new Error('Invalid center type');
+  });
+
+  // Compute absolute deviations from center
+  const deviations = groups.map((g, i) =>
+    g.map(val => Math.abs(val - centers[i]))
+  );
+
+  // Perform one-way ANOVA on absolute deviations
+  const anovaResult = oneWayAnova(deviations);
+
+  return {
+    statistic: anovaResult.statistic,
+    pValue: anovaResult.pValue,
+    df1: anovaResult.dfBetween,
+    df2: anovaResult.dfWithin
+  };
+}
+
+/**
+ * Shapiro-Wilk test for normality
+ * Tests whether a sample comes from a normal distribution
+ * @param {Array<number>} sample - Sample data
+ * @returns {Object} {statistic (W), pValue}
+ */
+export function shapiroWilk(sample) {
+  const n = sample.length;
+
+  if (n < 3) {
+    throw new Error('Sample must have at least 3 observations');
+  }
+
+  if (n > 5000) {
+    throw new Error('Shapiro-Wilk test is not recommended for samples larger than 5000');
+  }
+
+  // Sort the sample
+  const sorted = [...sample].sort((a, b) => a - b);
+
+  // Compute mean
+  const sampleMean = mean(sample);
+
+  // Compute sum of squares
+  const ss = sample.reduce((sum, val) => sum + (val - sampleMean) ** 2, 0);
+
+  // Shapiro-Wilk coefficients (approximation for small n)
+  // For a proper implementation, these would be from statistical tables
+  const k = Math.floor(n / 2);
+  let b = 0;
+
+  // Simple approximation of Shapiro-Wilk statistic
+  for (let i = 0; i < k; i++) {
+    const weight = shapiroWilkWeight(i + 1, n);
+    b += weight * (sorted[n - 1 - i] - sorted[i]);
+  }
+
+  const W = (b * b) / ss;
+
+  // Approximate p-value using transformation to normal
+  // This is a simplified approximation
+  const logW = Math.log(1 - W);
+  const mu = 0.0038915 * Math.pow(Math.log(n), 3) - 0.083751 * Math.pow(Math.log(n), 2) -
+             0.31082 * Math.log(n) - 1.5861;
+  const sigma = Math.exp(0.0030302 * Math.pow(Math.log(n), 2) - 0.082676 * Math.log(n) - 0.4803);
+
+  const z = (logW - mu) / sigma;
+  const pValue = normal.cdf(z, { mean: 0, sd: 1 });
+
+  return {
+    statistic: W,
+    pValue
+  };
+}
+
+/**
+ * Approximate Shapiro-Wilk weights
+ * Simplified approximation - proper implementation would use tables
+ */
+function shapiroWilkWeight(i, n) {
+  // Simplified approximation based on order statistics
+  // Proper weights require statistical tables or complex calculations
+  const p = (i - 0.375) / (n + 0.25);
+  return normal.quantile(p, { mean: 0, sd: 1 });
+}
+
+// ============= Correlation Tests =============
+
+/**
+ * Pearson correlation coefficient with significance test
+ * @param {Array<number>} x - First variable
+ * @param {Array<number>} y - Second variable
+ * @returns {Object} {r, pValue, df, ci95}
+ */
+export function pearsonCorrelation(x, y) {
+  if (x.length !== y.length) {
+    throw new Error('x and y must have equal length');
+  }
+
+  const n = x.length;
+  if (n < 3) {
+    throw new Error('Need at least 3 observations');
+  }
+
+  const meanX = mean(x);
+  const meanY = mean(y);
+
+  let sumXY = 0;
+  let sumX2 = 0;
+  let sumY2 = 0;
+
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - meanX;
+    const dy = y[i] - meanY;
+    sumXY += dx * dy;
+    sumX2 += dx * dx;
+    sumY2 += dy * dy;
+  }
+
+  const r = sumXY / Math.sqrt(sumX2 * sumY2);
+
+  // Test statistic
+  const df = n - 2;
+  const t = r * Math.sqrt(df / (1 - r * r));
+
+  // Two-tailed p-value
+  const pValue = 2 * (1 - tCDF(Math.abs(t), df));
+
+  // Fisher's z transformation for confidence interval
+  const z = 0.5 * Math.log((1 + r) / (1 - r));
+  const seZ = 1 / Math.sqrt(n - 3);
+  const zCrit = Math.abs(normal.quantile(0.025, { mean: 0, sd: 1 }));
+  const zLower = z - zCrit * seZ;
+  const zUpper = z + zCrit * seZ;
+
+  // Back-transform to correlation scale
+  const rLower = (Math.exp(2 * zLower) - 1) / (Math.exp(2 * zLower) + 1);
+  const rUpper = (Math.exp(2 * zUpper) - 1) / (Math.exp(2 * zUpper) + 1);
+
+  return {
+    r,
+    pValue,
+    df,
+    tStatistic: t,
+    ci95: [rLower, rUpper]
+  };
+}
+
+/**
+ * Spearman rank correlation coefficient with significance test
+ * @param {Array<number>} x - First variable
+ * @param {Array<number>} y - Second variable
+ * @returns {Object} {rho, pValue, df}
+ */
+export function spearmanCorrelation(x, y) {
+  if (x.length !== y.length) {
+    throw new Error('x and y must have equal length');
+  }
+
+  const n = x.length;
+  if (n < 3) {
+    throw new Error('Need at least 3 observations');
+  }
+
+  // Rank both variables
+  const rankX = rank(x);
+  const rankY = rank(y);
+
+  // Compute Pearson correlation on ranks
+  const result = pearsonCorrelation(rankX, rankY);
+
+  return {
+    rho: result.r,
+    pValue: result.pValue,
+    df: result.df,
+    tStatistic: result.tStatistic
+  };
+}
+
+/**
+ * Assign ranks to data (handling ties with average rank)
+ */
+function rank(data) {
+  const indexed = data.map((val, i) => ({ val, index: i }));
+  indexed.sort((a, b) => a.val - b.val);
+
+  const ranks = new Array(data.length);
+  let i = 0;
+
+  while (i < data.length) {
+    let j = i;
+    // Find ties
+    while (j < data.length && indexed[j].val === indexed[i].val) {
+      j++;
+    }
+
+    // Average rank for ties
+    const avgRank = (i + j + 1) / 2;
+    for (let k = i; k < j; k++) {
+      ranks[indexed[k].index] = avgRank;
+    }
+
+    i = j;
+  }
+
+  return ranks;
+}
+
+/**
+ * Fisher's exact test for 2x2 contingency tables
+ * @param {Array<Array<number>>} table - 2x2 contingency table [[a,b],[c,d]]
+ * @param {Object} options - {alternative: 'two-sided'|'less'|'greater'}
+ * @returns {Object} {pValue, oddsRatio, alternative}
+ */
+export function fisherExactTest(table, { alternative = 'two-sided' } = {}) {
+  if (table.length !== 2 || table[0].length !== 2 || table[1].length !== 2) {
+    throw new Error('Fisher exact test requires a 2x2 table');
+  }
+
+  const [[a, b], [c, d]] = table;
+
+  // Check all values are non-negative integers
+  if ([a, b, c, d].some(v => v < 0 || !Number.isInteger(v))) {
+    throw new Error('Table entries must be non-negative integers');
+  }
+
+  const n = a + b + c + d;
+  const row1 = a + b;
+  const row2 = c + d;
+  const col1 = a + c;
+  const col2 = b + d;
+
+  // Hypergeometric probability for a given cell count
+  const hypergeoProb = (x) => {
+    return (
+      factorial(row1) * factorial(row2) * factorial(col1) * factorial(col2) /
+      (factorial(x) * factorial(row1 - x) * factorial(col1 - x) *
+       factorial(row2 - (col1 - x)) * factorial(n))
+    );
+  };
+
+  // For two-sided test, sum probabilities <= observed probability
+  const observedProb = hypergeoProb(a);
+  let pValue;
+
+  if (alternative === 'two-sided') {
+    pValue = 0;
+    const minA = Math.max(0, col1 - row2);
+    const maxA = Math.min(row1, col1);
+
+    for (let x = minA; x <= maxA; x++) {
+      const prob = hypergeoProb(x);
+      if (prob <= observedProb + 1e-10) {
+        pValue += prob;
+      }
+    }
+  } else if (alternative === 'less') {
+    pValue = 0;
+    for (let x = Math.max(0, col1 - row2); x <= a; x++) {
+      pValue += hypergeoProb(x);
+    }
+  } else {
+    pValue = 0;
+    for (let x = a; x <= Math.min(row1, col1); x++) {
+      pValue += hypergeoProb(x);
+    }
+  }
+
+  // Odds ratio
+  const oddsRatio = (a * d) / (b * c);
+
+  return {
+    pValue: Math.min(pValue, 1.0),
+    oddsRatio: isFinite(oddsRatio) ? oddsRatio : (a * d === 0 ? 0 : Infinity),
+    alternative
+  };
+}
+
+/**
+ * Factorial function with caching for efficiency
+ */
+const factorialCache = new Map();
+function factorial(n) {
+  if (n < 0) throw new Error('Factorial of negative number');
+  if (n === 0 || n === 1) return 1;
+
+  if (factorialCache.has(n)) {
+    return factorialCache.get(n);
+  }
+
+  // Use log-gamma for large n to avoid overflow
+  if (n > 170) {
+    return Math.exp(logFactorial(n));
+  }
+
+  let result = 1;
+  for (let i = 2; i <= n; i++) {
+    result *= i;
+  }
+
+  factorialCache.set(n, result);
+  return result;
+}
+
+/**
+ * Log factorial using Stirling's approximation or gamma function
+ */
+function logFactorial(n) {
+  if (n < 20) {
+    return Math.log(factorial(n));
+  }
+
+  // Stirling's approximation
+  return n * Math.log(n) - n + 0.5 * Math.log(2 * Math.PI * n);
+}
+
 // ============= Multiple Testing Corrections =============
 
 /**
