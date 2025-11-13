@@ -748,71 +748,6 @@ export function leveneTest(groups, { center = 'median', trim = 0.1 } = {}) {
   };
 }
 
-/**
- * Shapiro-Wilk test for normality
- * Tests whether a sample comes from a normal distribution
- * @param {Array<number>} sample - Sample data
- * @returns {Object} {statistic (W), pValue}
- */
-export function shapiroWilk(sample) {
-  const n = sample.length;
-
-  if (n < 3) {
-    throw new Error('Sample must have at least 3 observations');
-  }
-
-  if (n > 5000) {
-    throw new Error('Shapiro-Wilk test is not recommended for samples larger than 5000');
-  }
-
-  // Sort the sample
-  const sorted = [...sample].sort((a, b) => a - b);
-
-  // Compute mean
-  const sampleMean = mean(sample);
-
-  // Compute sum of squares
-  const ss = sample.reduce((sum, val) => sum + (val - sampleMean) ** 2, 0);
-
-  // Shapiro-Wilk coefficients (approximation for small n)
-  // For a proper implementation, these would be from statistical tables
-  const k = Math.floor(n / 2);
-  let b = 0;
-
-  // Simple approximation of Shapiro-Wilk statistic
-  for (let i = 0; i < k; i++) {
-    const weight = shapiroWilkWeight(i + 1, n);
-    b += weight * (sorted[n - 1 - i] - sorted[i]);
-  }
-
-  const W = (b * b) / ss;
-
-  // Approximate p-value using transformation to normal
-  // This is a simplified approximation
-  const logW = Math.log(1 - W);
-  const mu = 0.0038915 * Math.pow(Math.log(n), 3) - 0.083751 * Math.pow(Math.log(n), 2) -
-             0.31082 * Math.log(n) - 1.5861;
-  const sigma = Math.exp(0.0030302 * Math.pow(Math.log(n), 2) - 0.082676 * Math.log(n) - 0.4803);
-
-  const z = (logW - mu) / sigma;
-  const pValue = normal.cdf(z, { mean: 0, sd: 1 });
-
-  return {
-    statistic: W,
-    pValue
-  };
-}
-
-/**
- * Approximate Shapiro-Wilk weights
- * Simplified approximation - proper implementation would use tables
- */
-function shapiroWilkWeight(i, n) {
-  // Simplified approximation based on order statistics
-  // Proper weights require statistical tables or complex calculations
-  const p = (i - 0.375) / (n + 0.25);
-  return normal.quantile(p, { mean: 0, sd: 1 });
-}
 
 // ============= Correlation Tests =============
 
@@ -847,25 +782,51 @@ export function pearsonCorrelation(x, y) {
     sumY2 += dy * dy;
   }
 
+  // Handle edge case: zero variance in either variable
+  if (sumX2 === 0 || sumY2 === 0) {
+    // When one variable is constant, correlation is undefined but conventionally 0
+    return {
+      r: 0,
+      pValue: 1.0,  // No evidence of correlation
+      df: n - 2,
+      tStatistic: 0,
+      ci95: [0, 0]
+    };
+  }
+
   const r = sumXY / Math.sqrt(sumX2 * sumY2);
 
   // Test statistic
   const df = n - 2;
-  const t = r * Math.sqrt(df / (1 - r * r));
+  let t, pValue;
 
-  // Two-tailed p-value
-  const pValue = 2 * (1 - tCDF(Math.abs(t), df));
+  // Handle perfect correlation (r = ±1)
+  if (Math.abs(r) >= 1 - 1e-10) {
+    t = r > 0 ? Infinity : -Infinity;
+    pValue = 0.0;
+  } else {
+    t = r * Math.sqrt(df / (1 - r * r));
+    pValue = 2 * (1 - tCDF(Math.abs(t), df));
+  }
 
   // Fisher's z transformation for confidence interval
-  const z = 0.5 * Math.log((1 + r) / (1 - r));
-  const seZ = 1 / Math.sqrt(n - 3);
-  const zCrit = Math.abs(normal.quantile(0.025, { mean: 0, sd: 1 }));
-  const zLower = z - zCrit * seZ;
-  const zUpper = z + zCrit * seZ;
+  let rLower, rUpper;
 
-  // Back-transform to correlation scale
-  const rLower = (Math.exp(2 * zLower) - 1) / (Math.exp(2 * zLower) + 1);
-  const rUpper = (Math.exp(2 * zUpper) - 1) / (Math.exp(2 * zUpper) + 1);
+  if (Math.abs(r) >= 1 - 1e-10) {
+    // Perfect correlation: CI is just the point estimate
+    rLower = r > 0 ? 1.0 : -1.0;
+    rUpper = r > 0 ? 1.0 : -1.0;
+  } else {
+    const z = 0.5 * Math.log((1 + r) / (1 - r));
+    const seZ = 1 / Math.sqrt(n - 3);
+    const zCrit = Math.abs(normal.quantile(0.025, { mean: 0, sd: 1 }));
+    const zLower = z - zCrit * seZ;
+    const zUpper = z + zCrit * seZ;
+
+    // Back-transform to correlation scale
+    rLower = (Math.exp(2 * zLower) - 1) / (Math.exp(2 * zLower) + 1);
+    rUpper = (Math.exp(2 * zUpper) - 1) / (Math.exp(2 * zUpper) + 1);
+  }
 
   return {
     r,
@@ -984,14 +945,18 @@ export function fisherExactTest(table, { alternative = 'two-sided' } = {}) {
         pValue += prob;
       }
     }
-  } else if (alternative === 'less') {
+  } else if (alternative === 'greater') {
+    // Greater: test for positive association (OR > 1)
+    // p-value = P(X >= observed) = sum from a to max
     pValue = 0;
-    for (let x = Math.max(0, col1 - row2); x <= a; x++) {
+    for (let x = a; x <= Math.min(row1, col1); x++) {
       pValue += hypergeoProb(x);
     }
   } else {
+    // Less: test for negative association (OR < 1)
+    // p-value = P(X <= observed) = sum from min to a
     pValue = 0;
-    for (let x = a; x <= Math.min(row1, col1); x++) {
+    for (let x = Math.max(0, col1 - row2); x <= a; x++) {
       pValue += hypergeoProb(x);
     }
   }

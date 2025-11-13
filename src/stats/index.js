@@ -19,7 +19,6 @@ import {
   holmBonferroni,
   fdr,
   leveneTest,
-  shapiroWilk,
   pearsonCorrelation,
   spearmanCorrelation,
   fisherExactTest
@@ -121,7 +120,6 @@ export {
 
   // Assumption testing
   leveneTest,
-  shapiroWilk,
 
   // Correlation tests
   pearsonCorrelation,

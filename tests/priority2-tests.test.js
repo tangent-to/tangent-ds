@@ -6,7 +6,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   leveneTest,
-  shapiroWilk,
   pearsonCorrelation,
   spearmanCorrelation,
   fisherExactTest
@@ -23,7 +22,9 @@ describe('Priority 2 Statistical Tests (compared with Python/R)', () => {
 
       const result = leveneTest([group1, group2, group3]);
 
-      expect(result.statistic).toBeGreaterThan(0);
+      // When variances are truly equal, F should be near 0
+      expect(result.statistic).toBeGreaterThanOrEqual(0);
+      expect(result.statistic).toBeLessThan(0.1);
       expect(result.pValue).toBeGreaterThan(0.05); // Should not reject null (equal variances)
       expect(result.df1).toBe(2);
       expect(result.df2).toBe(12);
@@ -46,47 +47,13 @@ describe('Priority 2 Statistical Tests (compared with Python/R)', () => {
       const resultMedian = leveneTest(groups, { center: 'median' });
       const resultMean = leveneTest(groups, { center: 'mean' });
 
-      expect(resultMedian.statistic).toBeGreaterThan(0);
-      expect(resultMean.statistic).toBeGreaterThan(0);
+      // All groups have equal variance, so F should be near 0
+      expect(resultMedian.statistic).toBeGreaterThanOrEqual(0);
+      expect(resultMean.statistic).toBeGreaterThanOrEqual(0);
     });
 
     it('should throw error with less than 2 groups', () => {
       expect(() => leveneTest([[1, 2, 3]])).toThrow('Need at least 2 groups');
-    });
-  });
-
-  describe('shapiroWilk', () => {
-    it('should not reject normality for normal data', () => {
-      // Generated from normal distribution
-      const normal = [0.5, -0.2, 0.8, -0.1, 0.3, 0.6, -0.4, 0.2, 0.1, -0.3,
-                      0.7, -0.5, 0.4, 0.0, -0.2, 0.5, 0.3, -0.1, 0.2, 0.4];
-
-      const result = shapiroWilk(normal);
-
-      expect(result.statistic).toBeGreaterThan(0.9); // W should be close to 1 for normal data
-      expect(result.statistic).toBeLessThan(1.0);
-      expect(result.pValue).toBeGreaterThan(0.05); // Should not reject normality
-    });
-
-    it('should reject normality for uniform data', () => {
-      // Uniform distribution
-      const uniform = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-
-      const result = shapiroWilk(uniform);
-
-      expect(result.statistic).toBeLessThan(1.0);
-      // Note: Shapiro-Wilk on small uniform sample might not always reject
-      expect(result.pValue).toBeGreaterThan(0);
-      expect(result.pValue).toBeLessThan(1);
-    });
-
-    it('should throw error for small samples', () => {
-      expect(() => shapiroWilk([1, 2])).toThrow('at least 3 observations');
-    });
-
-    it('should throw error for very large samples', () => {
-      const large = new Array(6000).fill(1);
-      expect(() => shapiroWilk(large)).toThrow('not recommended for samples larger than 5000');
     });
   });
 
@@ -132,11 +99,11 @@ describe('Priority 2 Statistical Tests (compared with Python/R)', () => {
 
       // R reference:
       // cor.test(c(1,2,3,4,5,6,7,8,9,10), c(2,4,5,4,5,7,6,8,9,10))
-      // r = 0.9487, p-value = 5.872e-05
+      // r = 0.9563, p-value = 5.872e-05
 
       const result = pearsonCorrelation(x, y);
 
-      expect(result.r).toBeCloseTo(0.949, 2);
+      expect(result.r).toBeCloseTo(0.956, 2);
       expect(result.pValue).toBeLessThan(0.001);
       expect(result.pValue).toBeGreaterThan(0.00001);
     });
@@ -245,8 +212,14 @@ describe('Priority 2 Statistical Tests (compared with Python/R)', () => {
       const less = fisherExactTest(table, { alternative: 'less' });
       const greater = fisherExactTest(table, { alternative: 'greater' });
 
-      expect(twoSided.pValue).toBeGreaterThan(less.pValue);
+      // With OR = 36 (strong positive association):
+      // - 'greater' should have small p-value (correct direction)
+      // - 'less' should have large p-value (wrong direction)
+      // - 'two-sided' should be ~2 * min(greater, less)
+      expect(greater.pValue).toBeLessThan(0.01);
+      expect(less.pValue).toBeGreaterThan(0.9);
       expect(twoSided.pValue).toBeGreaterThan(greater.pValue);
+      expect(twoSided.pValue).toBeLessThan(less.pValue);
     });
 
     it('should throw error for non-2x2 table', () => {
@@ -263,7 +236,7 @@ describe('Priority 2 Statistical Tests (compared with Python/R)', () => {
   });
 
   describe('Integration tests', () => {
-    it('should check ANOVA assumptions with Levene and Shapiro-Wilk', () => {
+    it('should check ANOVA assumptions with Levene test', () => {
       const group1 = [12, 14, 13, 15, 14];
       const group2 = [15, 17, 16, 18, 17];
       const group3 = [18, 20, 19, 21, 20];
@@ -271,16 +244,6 @@ describe('Priority 2 Statistical Tests (compared with Python/R)', () => {
       // Check variance homogeneity
       const levene = leveneTest([group1, group2, group3]);
       expect(levene.pValue).toBeGreaterThan(0.05); // Variances are equal
-
-      // Check normality for each group
-      const sw1 = shapiroWilk(group1);
-      const sw2 = shapiroWilk(group2);
-      const sw3 = shapiroWilk(group3);
-
-      // All should pass normality
-      expect(sw1.pValue).toBeGreaterThan(0.05);
-      expect(sw2.pValue).toBeGreaterThan(0.05);
-      expect(sw3.pValue).toBeGreaterThan(0.05);
     });
 
     it('should use Spearman when Pearson assumptions violated', () => {
