@@ -9,6 +9,7 @@
 
 import { mean as calculateMean } from '../core/math.js';
 import { prepareX } from '../core/table.js';
+import { Matrix, pseudoInverse } from 'ml-matrix';
 
 /**
  * Helper: Check if value is missing (NaN, null, undefined)
@@ -433,6 +434,316 @@ export class KNNImputer {
   }
 }
 
+// ============= IterativeImputer =============
+
+/**
+ * Multivariate imputation using chained equations (MICE algorithm)
+ * Compatible with sklearn.impute.IterativeImputer
+ *
+ * Models each feature with missing values as a function of other features,
+ * and uses that estimate for imputation. It does so in an iterated round-robin
+ * fashion: at each step, a feature column is designated as output y and the other
+ * feature columns are treated as inputs X. A regressor is fit on (X, y) for known
+ * values and used to predict missing values of y.
+ *
+ * @example
+ * const imputer = new IterativeImputer({ max_iter: 10 });
+ * imputer.fit(X_train);
+ * const X_filled = imputer.transform(X_test);
+ */
+export class IterativeImputer {
+  /**
+   * @param {Object} options
+   * @param {string} options.initial_strategy - Initial imputation strategy (default: 'mean')
+   * @param {number} options.max_iter - Maximum number of imputation rounds (default: 10)
+   * @param {number} options.tol - Tolerance for convergence (default: 1e-3)
+   * @param {number} options.min_value - Minimum possible imputed value (default: -Infinity)
+   * @param {number} options.max_value - Maximum possible imputed value (default: Infinity)
+   * @param {boolean} options.verbose - Print progress (default: false)
+   * @param {boolean} options.copy - If true, create copy of X (default: true)
+   */
+  constructor({
+    initial_strategy = 'mean',
+    max_iter = 10,
+    tol = 1e-3,
+    min_value = -Infinity,
+    max_value = Infinity,
+    verbose = false,
+    copy = true
+  } = {}) {
+    this.initial_strategy = initial_strategy;
+    this.max_iter = max_iter;
+    this.tol = tol;
+    this.min_value = min_value;
+    this.max_value = max_value;
+    this.verbose = verbose;
+    this.copy = copy;
+    this.nFeatures_ = null;
+    this.initial_imputer_ = null;
+    this._tableColumns = null;
+    this.n_iter_ = null;
+  }
+
+  /**
+   * Fit a simple linear regression using pseudoinverse
+   * @param {Array<Array<number>>} X - Features
+   * @param {Array<number>} y - Target
+   * @returns {Object} Model with coefficients and predict function
+   */
+  _fitLinearRegression(X, y) {
+    // Add intercept column
+    const n = X.length;
+    const Xmat = new Matrix(X);
+    const ones = Matrix.ones(n, 1);
+    const XwithIntercept = Matrix.columnMatrix(ones.getColumn(0), ...Xmat.transpose().to2DArray());
+
+    const yMat = new Matrix([y]).transpose();
+
+    // Use pseudoinverse for robust estimation: β = (X'X)^(-1) X'y = pinv(X) * y
+    const XpInv = pseudoInverse(XwithIntercept);
+    const beta = XpInv.mmul(yMat);
+    const coef = beta.to2DArray().map(row => row[0]);
+
+    return {
+      intercept: coef[0],
+      coefficients: coef.slice(1),
+      predict: (Xnew) => {
+        const predictions = [];
+        for (let i = 0; i < Xnew.length; i++) {
+          let pred = coef[0]; // intercept
+          for (let j = 0; j < Xnew[i].length; j++) {
+            pred += coef[j + 1] * Xnew[i][j];
+          }
+          predictions.push(pred);
+        }
+        return predictions;
+      }
+    };
+  }
+
+  /**
+   * Impute a single feature using other features
+   * @param {Array<Array<number>>} X - Data matrix
+   * @param {number} featureIdx - Index of feature to impute
+   * @returns {Array<number>} Imputed values for this feature
+   */
+  _imputeFeature(X, featureIdx) {
+    const n = X.length;
+    const nFeatures = X[0].length;
+
+    // Separate rows with and without missing values for this feature
+    const knownRows = [];
+    const missingRows = [];
+    const knownY = [];
+
+    for (let i = 0; i < n; i++) {
+      if (!isMissing(X[i][featureIdx])) {
+        knownRows.push(i);
+        knownY.push(X[i][featureIdx]);
+      } else {
+        missingRows.push(i);
+      }
+    }
+
+    // If no missing values, return as-is
+    if (missingRows.length === 0) {
+      return X.map(row => row[featureIdx]);
+    }
+
+    // If all values missing, use initial strategy
+    if (knownRows.length === 0) {
+      const fillValue = this.initial_imputer_.statistics_[featureIdx];
+      return new Array(n).fill(fillValue);
+    }
+
+    // Build training data (other features)
+    const X_train = [];
+    for (const idx of knownRows) {
+      const row = [];
+      for (let j = 0; j < nFeatures; j++) {
+        if (j !== featureIdx) {
+          row.push(X[idx][j]);
+        }
+      }
+      X_train.push(row);
+    }
+
+    // Fit regression model
+    const model = this._fitLinearRegression(X_train, knownY);
+
+    // Predict missing values
+    const X_missing = [];
+    for (const idx of missingRows) {
+      const row = [];
+      for (let j = 0; j < nFeatures; j++) {
+        if (j !== featureIdx) {
+          row.push(X[idx][j]);
+        }
+      }
+      X_missing.push(row);
+    }
+
+    const predictions = model.predict(X_missing);
+
+    // Combine known and predicted values
+    const result = new Array(n);
+    for (let i = 0; i < knownRows.length; i++) {
+      result[knownRows[i]] = X[knownRows[i]][featureIdx];
+    }
+    for (let i = 0; i < missingRows.length; i++) {
+      // Clip to min/max
+      let pred = predictions[i];
+      pred = Math.max(this.min_value, Math.min(this.max_value, pred));
+      result[missingRows[i]] = pred;
+    }
+
+    return result;
+  }
+
+  /**
+   * Fit the imputer on training data
+   * @param {Array<Array<number>>|Object} X - Training data
+   * @returns {IterativeImputer} this
+   */
+  fit(X) {
+    // Handle table input
+    if (X && typeof X === 'object' && !Array.isArray(X)) {
+      const prepared = prepareX({
+        columns: X.columns || X.X,
+        data: X.data,
+        omit_missing: false,
+      });
+      this._tableColumns = X.columns || X.X;
+      X = prepared.X;
+    }
+
+    if (!Array.isArray(X) || !Array.isArray(X[0])) {
+      throw new Error('X must be a 2D array or table object');
+    }
+
+    this.nFeatures_ = X[0].length;
+
+    // Initial imputation using simple strategy
+    this.initial_imputer_ = new SimpleImputer({ strategy: this.initial_strategy });
+    this.initial_imputer_.fit(X);
+
+    return this;
+  }
+
+  /**
+   * Transform data by filling missing values using MICE
+   * @param {Array<Array<number>>|Object} X - Data to transform
+   * @returns {Array<Array<number>>} Transformed data
+   */
+  transform(X) {
+    if (this.initial_imputer_ === null) {
+      throw new Error('Imputer must be fitted before transform');
+    }
+
+    // Handle table input
+    if (X && typeof X === 'object' && !Array.isArray(X)) {
+      const prepared = prepareX({
+        columns: X.columns || X.X || this._tableColumns,
+        data: X.data,
+        omit_missing: false,
+      });
+      X = prepared.X;
+    }
+
+    if (!Array.isArray(X) || !Array.isArray(X[0])) {
+      throw new Error('X must be a 2D array or table object');
+    }
+
+    if (X[0].length !== this.nFeatures_) {
+      throw new Error(`X has ${X[0].length} features, but imputer expected ${this.nFeatures_}`);
+    }
+
+    const n = X.length;
+    const nFeatures = this.nFeatures_;
+
+    // Initial imputation
+    let X_filled = this.initial_imputer_.transform(X);
+
+    // Store which values were originally missing
+    const missing_mask = [];
+    for (let i = 0; i < n; i++) {
+      missing_mask[i] = [];
+      for (let j = 0; j < nFeatures; j++) {
+        missing_mask[i][j] = isMissing(X[i][j]);
+      }
+    }
+
+    // Iterative imputation
+    let prev_X = X_filled.map(row => [...row]);
+
+    for (let iter = 0; iter < this.max_iter; iter++) {
+      // Impute each feature in round-robin fashion
+      for (let featureIdx = 0; featureIdx < nFeatures; featureIdx++) {
+        // Check if this feature has any missing values
+        let hasMissing = false;
+        for (let i = 0; i < n; i++) {
+          if (missing_mask[i][featureIdx]) {
+            hasMissing = true;
+            break;
+          }
+        }
+
+        if (!hasMissing) {
+          continue; // Skip features without missing values
+        }
+
+        // Impute this feature
+        const imputed = this._imputeFeature(X_filled, featureIdx);
+
+        // Update only the originally missing values
+        for (let i = 0; i < n; i++) {
+          if (missing_mask[i][featureIdx]) {
+            X_filled[i][featureIdx] = imputed[i];
+          }
+        }
+      }
+
+      // Check for convergence
+      let maxChange = 0;
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < nFeatures; j++) {
+          if (missing_mask[i][j]) {
+            const change = Math.abs(X_filled[i][j] - prev_X[i][j]);
+            maxChange = Math.max(maxChange, change);
+          }
+        }
+      }
+
+      if (this.verbose) {
+        console.log(`Iteration ${iter + 1}: max change = ${maxChange}`);
+      }
+
+      if (maxChange < this.tol) {
+        this.n_iter_ = iter + 1;
+        if (this.verbose) {
+          console.log(`Converged after ${this.n_iter_} iterations`);
+        }
+        break;
+      }
+
+      // Update prev_X
+      prev_X = X_filled.map(row => [...row]);
+      this.n_iter_ = iter + 1;
+    }
+
+    return X_filled;
+  }
+
+  /**
+   * Fit and transform in one step
+   * @param {Array<Array<number>>|Object} X - Data to fit and transform
+   * @returns {Array<Array<number>>} Transformed data
+   */
+  fit_transform(X) {
+    return this.fit(X).transform(X);
+  }
+}
+
 // ============= Functional Exports =============
 
 /**
@@ -454,5 +765,16 @@ export function simpleImpute(X, options = {}) {
  */
 export function knnImpute(X, options = {}) {
   const imputer = new KNNImputer(options);
+  return imputer.fit_transform(X);
+}
+
+/**
+ * Iterative imputation (functional interface)
+ * @param {Array<Array<number>>} X - Data with missing values
+ * @param {Object} options - Imputer options
+ * @returns {Array<Array<number>>} Imputed data
+ */
+export function iterativeImpute(X, options = {}) {
+  const imputer = new IterativeImputer(options);
   return imputer.fit_transform(X);
 }

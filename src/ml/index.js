@@ -19,10 +19,10 @@ import { GridSearchCV, Pipeline } from './pipeline.js';
 import { Recipe, recipe } from './recipe.js';
 
 // Imputation (missing data handling)
-import { SimpleImputer, KNNImputer, simpleImpute, knnImpute } from './impute.js';
+import { SimpleImputer, KNNImputer, IterativeImputer, simpleImpute, knnImpute, iterativeImpute } from './impute.js';
 
 // Outlier detection
-import { IsolationForest, LocalOutlierFactor, isolationForest, localOutlierFactor } from './outliers.js';
+import { IsolationForest, LocalOutlierFactor, MahalanobisDistance, isolationForest, localOutlierFactor, mahalanobisDistance } from './outliers.js';
 
 // Class-based estimators (scikit-like)
 import { KMeans } from './estimators/KMeans.js';
@@ -45,13 +45,17 @@ export {
   // Imputation (missing data)
   SimpleImputer,
   KNNImputer,
+  IterativeImputer,
   simpleImpute,
   knnImpute,
+  iterativeImpute,
   // Outlier detection
   IsolationForest,
   LocalOutlierFactor,
+  MahalanobisDistance,
   isolationForest,
   localOutlierFactor,
+  mahalanobisDistance,
   // Model interpretation
   interpret,
   KMeans,
