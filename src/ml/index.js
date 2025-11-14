@@ -18,6 +18,9 @@ import * as tuning from './tuning.js';
 import { GridSearchCV, Pipeline } from './pipeline.js';
 import { Recipe, recipe } from './recipe.js';
 
+// Imputation (missing data handling)
+import { SimpleImputer, KNNImputer, simpleImpute, knnImpute } from './impute.js';
+
 // Class-based estimators (scikit-like)
 import { KMeans } from './estimators/KMeans.js';
 import { HCA } from './estimators/HCA.js';
@@ -36,6 +39,11 @@ export {
   GridSearchCV,
   HCA,
   hca,
+  // Imputation (missing data)
+  SimpleImputer,
+  KNNImputer,
+  simpleImpute,
+  knnImpute,
   // Model interpretation
   interpret,
   KMeans,
