@@ -3,6 +3,7 @@
  */
 
 import * as kmeans from './kmeans.js';
+import * as dbscan from './dbscan.js';
 import * as hca from './hca.js';
 import * as polynomial from './polynomial.js';
 import * as silhouette from './silhouette.js';
@@ -26,6 +27,7 @@ import { IsolationForest, LocalOutlierFactor, MahalanobisDistance, isolationFore
 
 // Class-based estimators (scikit-like)
 import { KMeans } from './estimators/KMeans.js';
+import { DBSCAN } from './estimators/DBSCAN.js';
 import { HCA } from './estimators/HCA.js';
 import { KNNClassifier, KNNRegressor } from './estimators/KNN.js';
 import { DecisionTreeClassifier, DecisionTreeRegressor } from './estimators/DecisionTree.js';
@@ -35,6 +37,9 @@ import { PolynomialRegressor } from './estimators/PolynomialRegressor.js';
 import { MLPRegressor } from './estimators/MLPRegressor.js';
 
 export {
+  // Clustering algorithms
+  DBSCAN,
+  dbscan,
   DecisionTreeClassifier,
   DecisionTreeRegressor,
   GAMClassifier,
