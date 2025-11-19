@@ -77,6 +77,18 @@ console.log(`   - Number of classes: ${gam.gam.K}`);
 console.log(`   - Class names: ${gam.gam.classes.join(', ')}`);
 console.log(`   - Coefficient vectors fitted: ${gam.gam.coef.length} (K-1 for multinomial)`);
 
+// Display summary
+console.log('\n   Model Summary:');
+const summary = gam.summary();
+console.log(`   - Call: ${summary.call}`);
+console.log(`   - Family: ${summary.family}`);
+console.log(`   - Link: ${summary.link}`);
+console.log(`   - Training accuracy: ${(summary.trainingAccuracy * 100).toFixed(1)}%`);
+console.log('   - Per-class accuracy:');
+for (const [cls, acc] of Object.entries(summary.perClassAccuracy)) {
+  console.log(`     ${cls}: ${(acc * 100).toFixed(1)}%`);
+}
+
 // Make predictions
 const X_test = [
   [5.0, 3.5],  // Should predict setosa

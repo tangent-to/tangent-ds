@@ -561,6 +561,80 @@ export function createGAMSummary(model) {
 }
 
 /**
+ * Create GAM Classifier summary object
+ * @param {Object} model - Fitted GAM classifier model
+ * @returns {Object} Summary statistics
+ */
+export function createGAMClassifierSummary(model) {
+  const {
+    classes,
+    K,
+    n,
+    lambda,
+    smoothConfigs,
+    smoothMethod,
+    trainPredictions,
+    trainActual,
+  } = model;
+
+  // Compute training accuracy
+  let correct = 0;
+  for (let i = 0; i < n; i++) {
+    if (trainPredictions[i] === trainActual[i]) {
+      correct++;
+    }
+  }
+  const accuracy = correct / n;
+
+  // Compute per-class accuracy
+  const classCounts = {};
+  const classCorrect = {};
+  for (const cls of classes) {
+    classCounts[cls] = 0;
+    classCorrect[cls] = 0;
+  }
+
+  for (let i = 0; i < n; i++) {
+    const actualClass = trainActual[i];
+    classCounts[actualClass]++;
+    if (trainPredictions[i] === actualClass) {
+      classCorrect[actualClass]++;
+    }
+  }
+
+  const perClassAccuracy = {};
+  for (const cls of classes) {
+    perClassAccuracy[cls] = classCounts[cls] > 0
+      ? classCorrect[cls] / classCounts[cls]
+      : 0;
+  }
+
+  // Generate call string
+  const isPenalized = smoothMethod && smoothMethod !== null;
+  const callString = isPenalized
+    ? `GAM Classifier with penalized regression splines (${smoothMethod})`
+    : 'GAM Classifier with regression splines';
+
+  return {
+    call: callString,
+    family: 'multinomial',
+    link: 'softmax',
+    nClasses: K,
+    classes: classes,
+    nCoefficients: K - 1, // K-1 coefficient vectors
+    smoothTerms: smoothConfigs.map((config, i) => ({
+      term: config.name || `s(x${i})`,
+      nBasis: config.nBasis,
+      penaltyOrder: config.type || 'unknown'
+    })),
+    smoothingParameter: lambda,
+    trainingAccuracy: accuracy,
+    perClassAccuracy: perClassAccuracy,
+    n: n
+  };
+}
+
+/**
  * Cumulative normal distribution (for p-values)
  */
 function cumulativeNormal(x) {

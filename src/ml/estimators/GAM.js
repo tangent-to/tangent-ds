@@ -25,6 +25,7 @@ import {
   computeSmoothEDF,
   computeSmoothPValues,
   createGAMSummary,
+  createGAMClassifierSummary,
   fitPenalizedRegression,
   fitMultinomialGAM,
   optimizeSmoothness,
@@ -415,6 +416,13 @@ export class GAMClassifier extends Classifier {
     });
 
     this.gam.coef = multinomialResult.coefficients; // Array of K-1 coefficient vectors
+
+    // Store training data for summary statistics
+    this.gam.n = prepared.X.length;
+    this.gam.X_train = prepared.X;
+    this.gam.y_train = prepared.y;
+    this.gam.lambda = lambda;
+
     this.fitted = true;
     return this;
   }
@@ -515,6 +523,26 @@ export class GAMClassifier extends Classifier {
       }
 
       return maxClass;
+    });
+  }
+
+  summary() {
+    if (!this.fitted) {
+      throw new Error('GAMClassifier: estimator not fitted.');
+    }
+
+    // Compute training predictions
+    const trainPredictions = this.predict(this.gam.X_train);
+
+    return createGAMClassifierSummary({
+      classes: this.gam.classes,
+      K: this.gam.K,
+      n: this.gam.n,
+      lambda: this.gam.lambda,
+      smoothConfigs: this.gam.smoothConfigs,
+      smoothMethod: this.gam.smoothMethod,
+      trainPredictions: trainPredictions,
+      trainActual: this.gam.y_train,
     });
   }
 }
