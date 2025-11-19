@@ -129,10 +129,15 @@ const gamClassifier = new ds.ml.GAMClassifier({
   lambda: 0.1, // Fixed smoothing parameter
 });
 
+// IMPORTANT: Pass encoders to ensure species labels are decoded properly
+// The Recipe encodes categorical y to numbers [0,1,2] during preprocessing
+// The encoders parameter tells GAM to decode them back to ["Adelie", "Chinstrap", "Gentoo"]
+// This ensures predictions return actual species names, not numbers
 gamClassifier.fit({
   data: classificationPrepped.train.data,
   X: classificationPrepped.train.X,
   y: classificationPrepped.train.y,
+  encoders: classificationPrepped.train.metadata.encoders,
 });
 
 // Display summary

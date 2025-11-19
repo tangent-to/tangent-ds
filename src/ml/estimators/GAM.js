@@ -379,8 +379,26 @@ export class GAMClassifier extends Classifier {
   }
 
   fit(X, y = null) {
+    // Extract encoders if provided in the descriptor object
+    let encoders = null;
+    let yColumnName = null;
+
+    if (X && typeof X === 'object' && !Array.isArray(X)) {
+      encoders = X.encoders || null;
+      yColumnName = X.y || null;
+    }
+
     const prepared = prepareDataset(X, y);
-    const classes = Array.from(new Set(prepared.y)).sort();
+    let preparedY = prepared.y;
+    let classes = Array.from(new Set(preparedY)).sort();
+
+    // If encoders provided and y column has an encoder, decode the classes
+    // This handles the case where prepareDataset already encoded categorical y
+    if (encoders && yColumnName && encoders[yColumnName]) {
+      const yEncoder = encoders[yColumnName];
+      classes = classes.map((encoded) => yEncoder.decode(encoded));
+      preparedY = preparedY.map((encoded) => yEncoder.decode(encoded));
+    }
 
     // Create class mapping
     this.gam.classMap = {};
@@ -390,7 +408,7 @@ export class GAMClassifier extends Classifier {
     this.gam.classes = classes;
     this.gam.K = classes.length;
 
-    const numericY = prepared.y.map((label) => this.gam.classMap[label]);
+    const numericY = preparedY.map((label) => this.gam.classMap[label]);
     this.gam.columns = prepared.columns;
     this.gam._buildSmoothConfigs(prepared.X);
     const design = this.gam._designMatrix(prepared.X);
@@ -420,7 +438,7 @@ export class GAMClassifier extends Classifier {
     // Store training data for summary statistics
     this.gam.n = prepared.X.length;
     this.gam.X_train = prepared.X;
-    this.gam.y_train = prepared.y;
+    this.gam.y_train = preparedY;
     this.gam.lambda = lambda;
 
     this.fitted = true;
