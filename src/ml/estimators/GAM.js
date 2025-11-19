@@ -26,6 +26,7 @@ import {
   computeSmoothPValues,
   createGAMSummary,
   fitPenalizedRegression,
+  fitMultinomialGAM,
   optimizeSmoothness,
 } from '../gam_utils.js';
 
@@ -116,6 +117,9 @@ class GAMBase {
     basis = 'tp', // 'bs', 'cr', 'tp' (B-spline, cubic regression, truncated power) - default 'tp' for backward compat
     smoothMethod = null, // 'GCV', 'REML', or null for no penalty (default: null for backward compat)
     lambda = null, // Fixed smoothing parameter (null = no penalty if smoothMethod is null)
+    lambdaMin = 1e-8, // Minimum smoothing parameter for GCV/REML search
+    lambdaMax = 1e4, // Maximum smoothing parameter for GCV/REML search
+    nSteps = 20, // Number of grid points in log-space for GCV/REML search
     penaltyOrder = 2, // Order of difference penalty (1, 2, or 3)
     knotPlacement = 'quantile', // 'quantile' or 'uniform'
     task = 'regression',
@@ -131,6 +135,9 @@ class GAMBase {
     this.basis = basis;
     this.smoothMethod = smoothMethod;
     this.lambda = lambda;
+    this.lambdaMin = lambdaMin;
+    this.lambdaMax = lambdaMax;
+    this.nSteps = nSteps;
     this.penaltyOrder = penaltyOrder;
     this.knotPlacement = knotPlacement;
     this.task = task;
@@ -222,9 +229,9 @@ export class GAMRegressor extends Regressor {
       // Automatic smoothness selection
       const optResult = optimizeSmoothness(designMatrix, prepared.y, S, {
         method: this.gam.smoothMethod,
-        lambdaMin: 1e-8,
-        lambdaMax: 1e4,
-        nSteps: 20,
+        lambdaMin: this.gam.lambdaMin,
+        lambdaMax: this.gam.lambdaMax,
+        nSteps: this.gam.nSteps,
       });
       lambda = optResult.lambda;
     } else if (lambda === null) {
@@ -372,24 +379,26 @@ export class GAMClassifier extends Classifier {
 
   fit(X, y = null) {
     const prepared = prepareDataset(X, y);
-    const classes = Array.from(new Set(prepared.y));
-    if (classes.length !== 2) {
-      throw new Error('GAMClassifier currently supports exactly 2 classes.');
+    const classes = Array.from(new Set(prepared.y)).sort();
+
+    // Create class mapping
+    this.gam.classMap = {};
+    for (let i = 0; i < classes.length; i++) {
+      this.gam.classMap[classes[i]] = i;
     }
-    this.gam.classMap = {
-      [classes[0]]: 0,
-      [classes[1]]: 1,
-    };
     this.gam.classes = classes;
+    this.gam.K = classes.length;
+
     const numericY = prepared.y.map((label) => this.gam.classMap[label]);
     this.gam.columns = prepared.columns;
     this.gam._buildSmoothConfigs(prepared.X);
     const design = this.gam._designMatrix(prepared.X);
+    const designMatrix = new Matrix(design);
 
     // Build penalty matrix for smooths
     const S = this._buildPenaltyMatrix();
 
-    // Set up regularization for GLM
+    // Set up smoothing parameter
     let lambda = this.gam.lambda;
     if (lambda === null && this.gam.smoothMethod) {
       // For classification, use a moderate default lambda
@@ -399,18 +408,13 @@ export class GAMClassifier extends Classifier {
       lambda = 0;
     }
 
-    // Convert penalty matrix to regularization for GLM
-    // GLM uses ridge regularization, so we approximate with a scalar
-    const avgPenalty = lambda;
-
-    const logitResult = logit.fit(design, numericY, {
-      intercept: false,
+    // Fit multinomial GAM
+    const multinomialResult = fitMultinomialGAM(designMatrix, numericY, S, lambda, {
       maxIter: this.gam.maxIter,
       tol: this.gam.tol,
-      regularization: avgPenalty > 0 ? { alpha: avgPenalty, l1_ratio: 0 } : null,
     });
-    this.gam.coef = logitResult.coefficients;
-    this.gam.model = logitResult;
+
+    this.gam.coef = multinomialResult.coefficients; // Array of K-1 coefficient vectors
     this.fitted = true;
     return this;
   }
@@ -442,34 +446,76 @@ export class GAMClassifier extends Classifier {
     return S;
   }
 
-  _decisionFunction(X) {
+  _computeLinearPredictors(X) {
+    // Compute linear predictors for all classes
+    // For K classes: η_0 = 0 (reference), η_k = X'β_k for k=1,...,K-1
     const design = this.gam._designMatrix(X);
-    const scores = [];
-    for (const row of design) {
-      let sum = 0;
-      for (let i = 0; i < row.length; i++) {
-        sum += row[i] * this.gam.coef[i];
+    const n = design.length;
+    const K = this.gam.K;
+    const eta = Array(n).fill(null).map(() => Array(K).fill(0));
+
+    // Class 0 (reference) has η = 0 (already filled)
+    // For classes 1 to K-1, compute η_k = X'β_k
+    for (let k = 1; k < K; k++) {
+      const coefK = this.gam.coef[k - 1]; // Coefficients for class k
+      for (let i = 0; i < n; i++) {
+        let sum = 0;
+        for (let j = 0; j < design[i].length; j++) {
+          sum += design[i][j] * coefK[j];
+        }
+        eta[i][k] = sum;
       }
-      scores.push(sum);
     }
-    return scores;
+
+    return eta;
   }
 
   predictProba(X) {
     if (!this.fitted) throw new Error('GAMClassifier: estimator not fitted.');
     const data = preparePredictInput(X, this.gam.columns);
-    const scores = this._decisionFunction(data);
-    const probs = scores.map((score) => {
-      const p = 1 / (1 + Math.exp(-score));
-      return { [this.gam.classes[0]]: 1 - p, [this.gam.classes[1]]: p };
+    const eta = this._computeLinearPredictors(data);
+    const K = this.gam.K;
+
+    // Compute softmax probabilities
+    const probs = eta.map((etaRow) => {
+      // Find max for numerical stability
+      const maxEta = Math.max(...etaRow);
+
+      // Compute exp(η_k - max)
+      const expEta = etaRow.map((e) => Math.exp(Math.min(e - maxEta, 700)));
+
+      // Compute sum
+      const sumExp = expEta.reduce((sum, val) => sum + val, 0);
+
+      // Compute probabilities
+      const probObj = {};
+      for (let k = 0; k < K; k++) {
+        probObj[this.gam.classes[k]] = expEta[k] / sumExp;
+      }
+
+      return probObj;
     });
+
     return probs;
   }
 
   predict(X) {
     const probs = this.predictProba(X);
-    const [negLabel, posLabel] = this.gam.classes;
-    return probs.map((dist) => (dist[posLabel] >= 0.5 ? posLabel : negLabel));
+
+    return probs.map((probObj) => {
+      // Find class with highest probability
+      let maxProb = -1;
+      let maxClass = null;
+
+      for (const [className, prob] of Object.entries(probObj)) {
+        if (prob > maxProb) {
+          maxProb = prob;
+          maxClass = className;
+        }
+      }
+
+      return maxClass;
+    });
   }
 }
 

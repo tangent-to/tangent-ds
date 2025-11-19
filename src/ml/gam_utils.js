@@ -366,6 +366,151 @@ function determinant(A) {
 }
 
 /**
+ * Fit multinomial GAM using one-vs-reference approach
+ * Fits K-1 separate GAMs for K classes, using class 0 as reference
+ *
+ * @param {Matrix} X - Design matrix (n × p)
+ * @param {Array<number>} y - Class labels (0, 1, ..., K-1)
+ * @param {Matrix} S - Penalty matrix (p × p)
+ * @param {number} lambda - Smoothing parameter
+ * @param {Object} options - Fitting options
+ * @returns {Object} { coefficients: Array of K-1 coefficient vectors, classes: K }
+ */
+export function fitMultinomialGAM(X, y, S, lambda, options = {}) {
+  const { maxIter = 100, tol = 1e-6 } = options;
+
+  const n = X.rows;
+  const p = X.columns;
+  const K = Math.max(...y) + 1; // Number of classes
+
+  if (K === 2) {
+    // Binary case - just fit one coefficient vector
+    const binaryY = y.map(yi => yi); // 0 or 1
+    const result = fitMultinomialIRLS(X, binaryY, S, lambda, 2, { maxIter, tol });
+    return { coefficients: [result.coefficients[0]], K: 2 };
+  }
+
+  // Multinomial case: fit K-1 models (one for each class vs reference class 0)
+  const coefficients = [];
+
+  for (let k = 1; k < K; k++) {
+    // Create binary outcome: 1 if class k, 0 if class 0
+    // Exclude other classes for this binary comparison
+    const indices = [];
+    const binaryY = [];
+
+    for (let i = 0; i < n; i++) {
+      if (y[i] === 0 || y[i] === k) {
+        indices.push(i);
+        binaryY.push(y[i] === k ? 1 : 0);
+      }
+    }
+
+    // Extract rows for this binary comparison
+    const Xbinary = new Matrix(indices.length, p);
+    for (let i = 0; i < indices.length; i++) {
+      for (let j = 0; j < p; j++) {
+        Xbinary.set(i, j, X.get(indices[i], j));
+      }
+    }
+
+    // Fit binary GAM for class k vs class 0
+    const result = fitMultinomialIRLS(Xbinary, binaryY, S, lambda, 2, { maxIter, tol });
+    coefficients.push(result.coefficients[0]);
+  }
+
+  return { coefficients, K };
+}
+
+/**
+ * Fit multinomial GAM using IRLS (for K classes simultaneously)
+ *
+ * @param {Matrix} X - Design matrix
+ * @param {Array<number>} y - Binary outcomes (0 or 1)
+ * @param {Matrix} S - Penalty matrix
+ * @param {number} lambda - Smoothing parameter
+ * @param {number} K - Number of classes
+ * @param {Object} options - Fitting options
+ * @returns {Object} { coefficients }
+ */
+function fitMultinomialIRLS(X, y, S, lambda, K, options = {}) {
+  const { maxIter = 100, tol = 1e-6 } = options;
+
+  const n = X.rows;
+  const p = X.columns;
+
+  // For binary (K=2), fit one coefficient vector using logistic regression IRLS
+  let beta = Array(p).fill(0);
+  let eta = Array(n).fill(0);
+  let mu = Array(n).fill(0.5);
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    const betaPrev = [...beta];
+
+    // Compute working response and weights for logistic regression
+    const z = Array(n);
+    const w = Array(n);
+
+    for (let i = 0; i < n; i++) {
+      const pi = Math.max(1e-10, Math.min(1 - 1e-10, mu[i]));
+      const variance = pi * (1 - pi);
+
+      // Working response
+      z[i] = eta[i] + (y[i] - pi) / Math.max(variance, 1e-10);
+
+      // Working weight
+      w[i] = variance;
+    }
+
+    // Weighted penalized least squares: (X'WX + λS)β = X'Wz
+    const sqrtW = w.map(wi => Math.sqrt(Math.max(wi, 0)));
+    const WX = new Matrix(n, p);
+    const Wz = Array(n);
+
+    for (let i = 0; i < n; i++) {
+      Wz[i] = sqrtW[i] * z[i];
+      for (let j = 0; j < p; j++) {
+        WX.set(i, j, sqrtW[i] * X.get(i, j));
+      }
+    }
+
+    const XtWX = WX.transpose().mmul(WX);
+    const XtWz = WX.transpose().mmul(Matrix.columnVector(Wz));
+
+    // Add penalty
+    const penalized = XtWX.clone();
+    for (let i = 0; i < p; i++) {
+      for (let j = 0; j < p; j++) {
+        penalized.set(i, j, penalized.get(i, j) + lambda * S.get(i, j));
+      }
+    }
+
+    // Solve for beta
+    let betaMat;
+    try {
+      betaMat = penalized.solve(XtWz);
+    } catch (e) {
+      const svd = new SingularValueDecomposition(penalized);
+      betaMat = svd.solve(XtWz);
+    }
+
+    beta = Array.from(betaMat.getColumn(0));
+
+    // Update eta and mu
+    eta = X.mmul(Matrix.columnVector(beta)).getColumn(0);
+    mu = eta.map(e => 1 / (1 + Math.exp(-Math.min(Math.max(e, -700), 700))));
+
+    // Check convergence
+    const maxChange = Math.max(...beta.map((b, i) => Math.abs(b - betaPrev[i])));
+    if (maxChange < tol) {
+      break;
+    }
+  }
+
+  return { coefficients: [beta] };
+}
+
+/**
  * Create GAM summary object (similar to summary.gam in R)
  * @param {Object} model - Fitted GAM model
  * @returns {Object} Summary statistics
