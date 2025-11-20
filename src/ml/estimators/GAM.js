@@ -81,17 +81,20 @@ function prepareDataset(X, y) {
       y: X.y,
       data: X.data,
       omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
+      encoders: X.encoders,  // Pass encoders so prepareXY can encode categorical y values
     });
     return {
       X: toNumericMatrix(prepared.X),
       y: Array.isArray(prepared.y) ? prepared.y.slice() : Array.from(prepared.y),
       columns: prepared.columnsX,
+      encoders: prepared.encoders,  // Return encoders for later use
     };
   }
   return {
     X: toNumericMatrix(X),
     y: Array.isArray(y) ? y.slice() : Array.from(y),
     columns: null,
+    encoders: null,
   };
 }
 
@@ -379,40 +382,31 @@ export class GAMClassifier extends Classifier {
   }
 
   fit(X, y = null) {
-    // Extract encoders if provided in the descriptor object
-    let encoders = null;
-    let yColumnName = null;
-
-    if (X && typeof X === 'object' && !Array.isArray(X)) {
-      encoders = X.encoders || null;
-      yColumnName = X.y || null;
-    }
-
     const prepared = prepareDataset(X, y);
-    let preparedY = prepared.y;
-    let classes = Array.from(new Set(preparedY)).sort();
+    const preparedY = prepared.y;
 
-    // If encoders provided and y column has an encoder, decode the classes
-    // This handles the case where prepareDataset already encoded categorical y
-    // Try both the column name and the generic "y" key (Recipe stores it as "y")
-    if (encoders) {
-      const yEncoder = encoders[yColumnName] || encoders.y;
-      if (yEncoder && yEncoder.classes_) {
-        // LabelEncoder has classes_ array for decoding: classes_[index] = label
-        classes = classes.map((encoded) => yEncoder.classes_[encoded]);
-        preparedY = preparedY.map((encoded) => yEncoder.classes_[encoded]);
-      }
+    // Store label encoder if provided (for decoding predictions later)
+    this.labelEncoder = null;
+    if (prepared.encoders && prepared.encoders.y && prepared.encoders.y.classes_) {
+      this.labelEncoder = prepared.encoders.y;
     }
 
-    // Create class mapping
-    this.gam.classMap = {};
-    for (let i = 0; i < classes.length; i++) {
-      this.gam.classMap[classes[i]] = i;
+    // preparedY is already encoded as numbers (0, 1, 2, ...) by prepareXY if encoder was provided
+    // Get unique classes and map them
+    const numericY = preparedY;
+    const uniqueClasses = Array.from(new Set(numericY)).sort((a, b) => a - b);
+
+    // Store class information
+    // If we have a label encoder, use it to get the class names; otherwise use the numeric values
+    let classes;
+    if (this.labelEncoder) {
+      classes = uniqueClasses.map(idx => this.labelEncoder.classes_[idx]);
+    } else {
+      classes = uniqueClasses;
     }
+
     this.gam.classes = classes;
     this.gam.K = classes.length;
-
-    const numericY = preparedY.map((label) => this.gam.classMap[label]);
     this.gam.columns = prepared.columns;
     this.gam._buildSmoothConfigs(prepared.X);
     const design = this.gam._designMatrix(prepared.X);
@@ -553,8 +547,16 @@ export class GAMClassifier extends Classifier {
       throw new Error('GAMClassifier: estimator not fitted.');
     }
 
-    // Compute training predictions
+    // Compute training predictions (returns decoded class names if labelEncoder exists)
     const trainPredictions = this.predict(this.gam.X_train);
+
+    // Decode training actuals to match predictions
+    let trainActual;
+    if (this.labelEncoder) {
+      trainActual = this.labelEncoder.inverseTransform(this.gam.y_train);
+    } else {
+      trainActual = this.gam.y_train;
+    }
 
     return createGAMClassifierSummary({
       classes: this.gam.classes,
@@ -564,7 +566,7 @@ export class GAMClassifier extends Classifier {
       smoothConfigs: this.gam.smoothConfigs,
       smoothMethod: this.gam.smoothMethod,
       trainPredictions: trainPredictions,
-      trainActual: this.gam.y_train,
+      trainActual: trainActual,
     });
   }
 }
