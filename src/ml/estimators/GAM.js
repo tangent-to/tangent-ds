@@ -383,40 +383,13 @@ export class GAMClassifier extends Classifier {
 
   fit(X, y = null) {
     const prepared = prepareDataset(X, y);
-    let preparedY = prepared.y;
+    const preparedY = prepared.y;
 
-    // Store label encoder if provided (for decoding predictions later)
-    this.labelEncoder = null;
-    if (prepared.encoders && prepared.encoders.y && prepared.encoders.y.classes_) {
-      this.labelEncoder = prepared.encoders.y;
-    }
+    // Use centralized label encoder extraction
+    this._extractLabelEncoder(prepared);
 
-    // prepareXY already transforms y using the encoder, so preparedY is numeric [0, 1, 2, ...]
-    // We need to determine which classes are actually present in the training data
-    let numericY;
-    let classes;
-
-    if (this.labelEncoder) {
-      // preparedY is already encoded as numbers by prepareXY
-      numericY = preparedY;
-      // Get unique classes actually present in training data
-      const uniqueIndices = Array.from(new Set(numericY)).sort((a, b) => a - b);
-      classes = uniqueIndices.map(idx => this.labelEncoder.classes_[idx]);
-    } else {
-      // No encoder provided - handle string or numeric labels
-      const uniqueLabels = Array.from(new Set(preparedY));
-      if (typeof uniqueLabels[0] === 'string') {
-        // Create our own mapping for string labels
-        classes = uniqueLabels.sort();
-        const classMap = {};
-        classes.forEach((label, idx) => classMap[label] = idx);
-        numericY = preparedY.map(label => classMap[label]);
-      } else {
-        // Already numeric
-        numericY = preparedY;
-        classes = uniqueLabels.sort((a, b) => a - b);
-      }
-    }
+    // Use centralized class extraction
+    const { numericY, classes } = this._getClasses(preparedY, true);
 
     this.gam.classes = classes;
     this.gam.K = classes.length;
@@ -567,13 +540,8 @@ export class GAMClassifier extends Classifier {
     // Compute training predictions (returns decoded class names if labelEncoder exists)
     const trainPredictions = this.predict(this.gam.X_train);
 
-    // Decode training actuals to match predictions
-    let trainActual;
-    if (this.labelEncoder) {
-      trainActual = this.labelEncoder.inverseTransform(this.gam.y_train);
-    } else {
-      trainActual = this.gam.y_train;
-    }
+    // Use centralized label decoder
+    const trainActual = this._decodeLabels(this.gam.y_train);
 
     return createGAMClassifierSummary({
       classes: this.gam.classes,

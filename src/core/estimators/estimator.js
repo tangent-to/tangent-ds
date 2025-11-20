@@ -245,6 +245,81 @@ export class Regressor extends Estimator {
 export class Classifier extends Estimator {
   constructor(params = {}) {
     super(params);
+    this.labelEncoder_ = null;
+    this.classes_ = null;
+  }
+
+  /**
+   * Extract and store label encoder from prepared data
+   * @param {Object} prepared - Result from prepareXY/prepareDataset
+   * @returns {boolean} True if encoder was found and stored
+   */
+  _extractLabelEncoder(prepared) {
+    if (prepared && prepared.encoders && prepared.encoders.y) {
+      this.labelEncoder_ = prepared.encoders.y;
+      if (this.labelEncoder_.classes_) {
+        this.classes_ = this.labelEncoder_.classes_.slice();
+      }
+      return true;
+    }
+    this.labelEncoder_ = null;
+    this.classes_ = null;
+    return false;
+  }
+
+  /**
+   * Get unique classes from labels (encoded or raw)
+   * If labelEncoder exists, preparedY is assumed to be numeric indices [0, 1, 2, ...]
+   * Otherwise, creates classes from unique values in preparedY
+   *
+   * @param {Array} preparedY - Label array (numeric if encoded, or raw labels)
+   * @param {boolean} onlyPresentClasses - If true, only return classes present in preparedY
+   * @returns {Object} { numericY, classes }
+   */
+  _getClasses(preparedY, onlyPresentClasses = true) {
+    if (this.labelEncoder_) {
+      // preparedY is already encoded as numbers by prepareXY
+      const numericY = preparedY;
+
+      if (onlyPresentClasses) {
+        // Get only classes actually present in training data
+        const uniqueIndices = Array.from(new Set(numericY)).sort((a, b) => a - b);
+        const classes = uniqueIndices.map(idx => this.labelEncoder_.classes_[idx]);
+        return { numericY, classes };
+      } else {
+        // Return all classes from encoder
+        return { numericY, classes: this.labelEncoder_.classes_.slice() };
+      }
+    } else {
+      // No encoder - handle string or numeric labels
+      const uniqueLabels = Array.from(new Set(preparedY));
+
+      if (typeof uniqueLabels[0] === 'string') {
+        // Create our own mapping for string labels
+        const classes = uniqueLabels.sort();
+        const classMap = {};
+        classes.forEach((label, idx) => classMap[label] = idx);
+        const numericY = preparedY.map(label => classMap[label]);
+        return { numericY, classes };
+      } else {
+        // Already numeric
+        const numericY = preparedY;
+        const classes = uniqueLabels.sort((a, b) => a - b);
+        return { numericY, classes };
+      }
+    }
+  }
+
+  /**
+   * Decode numeric predictions to original labels
+   * @param {Array} predictions - Numeric predictions or label strings
+   * @returns {Array} Decoded labels (or original if no encoder)
+   */
+  _decodeLabels(predictions) {
+    if (this.labelEncoder_) {
+      return this.labelEncoder_.inverseTransform(predictions);
+    }
+    return predictions;
   }
 
   /**

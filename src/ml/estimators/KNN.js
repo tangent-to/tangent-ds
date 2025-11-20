@@ -285,20 +285,16 @@ export class KNNClassifier extends Classifier {
   constructor(opts = {}) {
     super(opts);
     this.knn = new KNNBase(opts);
-    this.labelEncoder = null;
   }
 
   fit(X, y = null) {
     const prepared = this.knn._fitBase(X, y);
-    if (prepared && prepared.encoders && prepared.encoders.y instanceof LabelEncoder) {
-      this.labelEncoder = prepared.encoders.y;
-    } else {
-      this.labelEncoder = null;
-    }
+    // Use centralized label encoder extraction
+    this._extractLabelEncoder(prepared);
     return this;
   }
 
-  predict(X, { decode = !!this.labelEncoder } = {}) {
+  predict(X, { decode = !!this.labelEncoder_ } = {}) {
     const prepared = this.knn._preparePredict(X);
     const data = prepared.X || prepared;
     const predictions = [];
@@ -325,14 +321,15 @@ export class KNNClassifier extends Classifier {
       predictions.push(bestLabel);
     }
 
-    if (decode && this.labelEncoder) {
-      return this.labelEncoder.inverseTransform(predictions);
+    // Use centralized label decoder
+    if (decode) {
+      return this._decodeLabels(predictions);
     }
 
     return predictions;
   }
 
-  predictProba(X, { decode = !!this.labelEncoder } = {}) {
+  predictProba(X, { decode = !!this.labelEncoder_ } = {}) {
     const prepared = this.knn._preparePredict(X);
     const data = prepared.X || prepared;
     const result = [];
@@ -351,10 +348,10 @@ export class KNNClassifier extends Classifier {
         total += weight;
       }
 
-      if (decode && this.labelEncoder) {
+      if (decode && this.labelEncoder_) {
         const decoded = {};
         labels.forEach((label) => {
-          const name = this.labelEncoder.inverseTransform([label])[0];
+          const name = this.labelEncoder_.inverseTransform([label])[0];
           decoded[name] = total === 0 ? 0 : (votes.get(label) || 0) / total;
         });
         result.push(decoded);
