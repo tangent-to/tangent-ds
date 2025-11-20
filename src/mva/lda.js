@@ -5,7 +5,7 @@
 
 import { eig, Matrix, solveLeastSquares, svd } from '../core/linalg.js';
 import { mean, stddev } from '../core/math.js';
-import { prepareXY } from '../core/table.js';
+import { prepareX, prepareXY } from '../core/table.js';
 import {
   columnsToRows,
   eigenvaluePowers,
@@ -23,6 +23,7 @@ export function fit(X, y, options = {}) {
   let featureNames = null;
   let scale = options.scale !== undefined ? options.scale : false;
   let scaling = options.scaling !== undefined ? options.scaling : 2;
+  let labelEncoder = null;
   // Normalize naOmit parameter (naOmit is primary, omit_missing is alias)
   let naOmit = options.omit_missing !== undefined
     ? options.omit_missing
@@ -42,11 +43,16 @@ export function fit(X, y, options = {}) {
       y: opts.y,
       data: opts.data,
       naOmit: naOmit,
+      encoders: opts.encoders, // Pass encoders for label encoding
     });
     X = prepared.X;
     y = prepared.y;
     if (prepared.columnsX && prepared.columnsX.length) {
       featureNames = prepared.columnsX.map((name) => String(name));
+    }
+    // Extract label encoder if present
+    if (prepared.encoders && prepared.encoders.y) {
+      labelEncoder = prepared.encoders.y;
     }
     if (opts.scale !== undefined) {
       scale = opts.scale;
@@ -332,6 +338,7 @@ export function fit(X, y, options = {}) {
     classMeanScores,
     classStdScores,
     featureNames: variableNames,
+    labelEncoder, // Include label encoder for decoding predictions
   };
 }
 
@@ -373,8 +380,21 @@ export function transform(model, X) {
 }
 
 export function predict(model, X) {
-  const { classes, classMeanScores } = model;
-  const transformed = transform(model, X);
+  const { classes, classMeanScores, featureNames } = model;
+
+  // Handle declarative table-style input
+  let dataToTransform = X;
+  if (X && typeof X === 'object' && !Array.isArray(X) && ('data' in X || 'X' in X)) {
+    // Extract X from table using prepareX (already imported at top of file)
+    const prepared = prepareX({
+      columns: X.X || X.columns,
+      data: X.data,
+      naOmit: X.naOmit !== undefined ? X.naOmit : (X.omit_missing !== undefined ? X.omit_missing : false),
+    });
+    dataToTransform = prepared.X;
+  }
+
+  const transformed = transform(model, dataToTransform);
   const scoreVectors = transformed.map((score) =>
     Array.from({ length: Object.keys(score).length }, (_, idx) => score[`ld${idx + 1}`])
   );

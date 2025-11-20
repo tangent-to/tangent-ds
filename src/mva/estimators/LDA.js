@@ -43,7 +43,7 @@ export class LDA extends Classifier {
    *
    * Supports:
    *  - fit(Xarray, yarray)
-   *  - fit({ X: 'col'|'[cols]', y: 'label', data: tableLike, omit_missing })
+   *  - fit({ X: 'col'|'[cols]', y: 'label', data: tableLike, omit_missing, encoders })
    *
    * Returns: this
    */
@@ -58,7 +58,7 @@ export class LDA extends Classifier {
       };
       const callOpts = { ...baseOpts, ...X };
       // If intercept-like or other params existed, they'd be merged here.
-      // Underlying ldaFn.fit supports receiving a single object { X, y, data, ... }
+      // Underlying ldaFn.fit supports receiving a single object { X, y, data, encoders, ... }
       result = ldaFn.fit(callOpts);
     } else {
       // Positional numeric call: fit(Xarray, yarray, opts)
@@ -75,6 +75,15 @@ export class LDA extends Classifier {
     this.model = result;
     this.fitted = true;
     this.params.scaling = normalizeScaling(result.scaling ?? this.params.scaling);
+
+    // Extract label encoder if present
+    if (result.labelEncoder) {
+      this.labelEncoder_ = result.labelEncoder;
+      if (this.labelEncoder_.classes_) {
+        this.classes_ = this.labelEncoder_.classes_.slice();
+      }
+    }
+
     return this;
   }
 
@@ -99,13 +108,18 @@ export class LDA extends Classifier {
    * Accepts:
    *  - numeric array X
    *  - declarative object { X: cols, data: tableLike }
+   *
+   * Returns decoded labels if label encoder is present, otherwise numeric predictions
    */
   predict(X) {
     if (!this.fitted || !this.model) {
       throw new Error('LDA: estimator not fitted. Call fit() first.');
     }
 
-    return ldaFn.predict(this.model, X);
+    const predictions = ldaFn.predict(this.model, X);
+
+    // Decode labels using centralized method if encoder exists
+    return this._decodeLabels(predictions);
   }
 
   /**
