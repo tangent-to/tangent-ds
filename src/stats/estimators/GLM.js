@@ -21,7 +21,7 @@ export class GLM extends Estimator {
    * @param {Object} params - Model parameters
    * @param {string} params.family - GLM family (gaussian, binomial, poisson, gamma, inverse_gaussian, negative_binomial)
    * @param {string} params.link - Link function (default: canonical link for family)
-   * @param {string} params.multiclass - Multiclass strategy: 'ovr' (one-vs-rest) or null (binary/regression)
+   * @param {string} params.multiclass - Multiclass strategy: 'ovr' (one-vs-rest), 'multinomial' (softmax), or null (binary/regression)
    * @param {Object} params.randomEffects - Random effects specification {intercept: [...], slopes: {...}}
    * @param {boolean} params.intercept - Include intercept term (default: true)
    * @param {number} params.maxIter - Maximum iterations (default: 100)
@@ -38,7 +38,7 @@ export class GLM extends Estimator {
     this.params = {
       family: 'gaussian',
       link: null,
-      multiclass: null, // 'ovr' for one-vs-rest multiclass
+      multiclass: null, // 'ovr' for one-vs-rest, 'multinomial' for softmax multiclass
       randomEffects: null,
       intercept: true,
       maxIter: 100,
@@ -133,6 +133,12 @@ export class GLM extends Estimator {
       if (this.params.multiclass === 'ovr' && this.params.family === 'binomial' && opts.data) {
         // Multiclass one-vs-rest
         return this._fitMulticlass(opts);
+      }
+
+      // Check if multinomial is enabled
+      if (this.params.multiclass === 'multinomial' && this.params.family === 'binomial' && opts.data) {
+        // Multiclass multinomial (softmax)
+        return this._fitMultinomial(opts);
       }
 
       // Standard single-model fitting
@@ -293,6 +299,77 @@ export class GLM extends Estimator {
   }
 
   /**
+   * Fit multiclass GLM using true multinomial logistic regression (softmax)
+   * Automatically converts categorical y column into K-1 binary indicators
+   * @private
+   */
+  _fitMultinomial(opts) {
+    const { data, y: yColumn } = opts;
+
+    // Store original column names for predictions
+    this._columnsX = opts.X;
+    this._columnY = yColumn;
+
+    // Extract y values to find classes
+    const yValues = data.map((row) => row[yColumn]);
+    this._classes = [...new Set(yValues)].sort();
+
+    if (this._classes.length < 2) {
+      throw new Error('Multinomial requires at least 2 classes');
+    }
+
+    if (this._classes.length === 2) {
+      // Binary case - fit single model with 0/1 encoding
+      console.warn('Only 2 classes detected. Consider using binary GLM without multiclass option.');
+      this._isMulticlass = false;
+
+      // Encode as 0/1
+      const binaryData = data.map((row) => ({
+        ...row,
+        __binary_target__: row[yColumn] === this._classes[1] ? 1 : 0,
+      }));
+
+      return this._fitSingleFromOpts({
+        ...opts,
+        y: '__binary_target__',
+        data: binaryData,
+      });
+    }
+
+    // Multiclass case - create K-1 binary indicators and fit true multinomial
+    console.log(
+      `ℹ️  Multinomial: Fitting true multinomial model with K=${this._classes.length} classes (K-1=${
+        this._classes.length - 1
+      } parameters, joint optimization with softmax).`,
+    );
+
+    // Use first class as reference category (coded as all zeros)
+    const referenceClass = this._classes[0];
+    const nonReferenceClasses = this._classes.slice(1);
+
+    // Create binary indicator columns for K-1 classes
+    const indicatorColumns = nonReferenceClasses.map((cls) => `__indicator_${cls}__`);
+    const dataWithIndicators = data.map((row) => {
+      const newRow = { ...row };
+      for (let i = 0; i < nonReferenceClasses.length; i++) {
+        newRow[indicatorColumns[i]] = row[yColumn] === nonReferenceClasses[i] ? 1 : 0;
+      }
+      return newRow;
+    });
+
+    // Store original class names (not indicator column names) for summary and predictions
+    this._targetNames = nonReferenceClasses;
+    this._indicatorColumns = indicatorColumns; // Store mapping for internal use
+
+    // Fit true multinomial using multi-output infrastructure
+    return this._fitTrueMultinomial({
+      ...opts,
+      y: indicatorColumns,
+      data: dataWithIndicators,
+    });
+  }
+
+  /**
    * Fit multi-output models (multiple independent targets)
    * For multinomial logit: fit K-1 models for K classes (reference category has all zeros)
    * @private
@@ -361,7 +438,11 @@ export class GLM extends Estimator {
     // Store column names
     this._columnsX = opts.X;
     this._columnY = yColumns;
-    this._targetNames = yColumns;
+
+    // Only set _targetNames if not already set (e.g., by _fitMultinomial)
+    if (!this._targetNames) {
+      this._targetNames = yColumns;
+    }
 
     // Prepare X
     const prepared = prepareX({
@@ -683,22 +764,41 @@ export class GLM extends Estimator {
         const probs = predictMultinomial(this._model, Xmat, { type: 'probs' });
 
         // Convert to object format with class names
-        return probs.map((probArray) => {
-          const probObj = { __reference__: probArray[0] };
-          for (let k = 0; k < this._targetNames.length; k++) {
-            probObj[this._targetNames[k]] = probArray[k + 1];
-          }
-          return probObj;
-        });
+        // If we have _classes (from _fitMultinomial), use actual class names including reference
+        if (this._classes && this._classes.length > 0) {
+          return probs.map((probArray) => {
+            const probObj = {};
+            probObj[this._classes[0]] = probArray[0]; // Reference class
+            for (let k = 0; k < this._targetNames.length; k++) {
+              probObj[this._targetNames[k]] = probArray[k + 1];
+            }
+            return probObj;
+          });
+        } else {
+          // Fallback to old behavior (when fit with manual indicators)
+          return probs.map((probArray) => {
+            const probObj = { __reference__: probArray[0] };
+            for (let k = 0; k < this._targetNames.length; k++) {
+              probObj[this._targetNames[k]] = probArray[k + 1];
+            }
+            return probObj;
+          });
+        }
       } else {
         // Return class indices or names
         const classIndices = predictMultinomial(this._model, Xmat, { type: 'class' });
 
         // Convert to class names
-        return classIndices.map((idx) => {
-          if (idx === 0) return '__reference__';
-          return this._targetNames[idx - 1];
-        });
+        // If we have _classes (from _fitMultinomial), use actual class names
+        if (this._classes && this._classes.length > 0) {
+          return classIndices.map((idx) => this._classes[idx]);
+        } else {
+          // Fallback to old behavior (when fit with manual indicators)
+          return classIndices.map((idx) => {
+            if (idx === 0) return '__reference__';
+            return this._targetNames[idx - 1];
+          });
+        }
       }
     }
 
@@ -1092,7 +1192,15 @@ export class GLM extends Estimator {
     let output = `\nMultinomial Logistic Regression\n`;
     output += `Family: multinomial, Link: softmax\n`;
     output += `Classes: K=${K} (reference + ${K - 1} modeled)\n`;
-    output += `Targets: ${this._targetNames.join(', ')} (reference category: all zeros)\n\n`;
+
+    // Show reference class name if available (from _fitMultinomial)
+    if (this._classes && this._classes.length > 0) {
+      output += `Reference class: ${this._classes[0]}\n`;
+      output += `Modeled classes: ${this._targetNames.join(', ')}\n\n`;
+    } else {
+      // Fallback to old behavior (when fit with manual indicators)
+      output += `Targets: ${this._targetNames.join(', ')} (reference category: all zeros)\n\n`;
+    }
 
     // Coefficients for each class
     const labels = this._getCoefLabels();
