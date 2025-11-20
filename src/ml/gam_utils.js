@@ -390,32 +390,16 @@ export function fitMultinomialGAM(X, y, S, lambda, options = {}) {
     return { coefficients: [result.coefficients[0]], K: 2 };
   }
 
-  // Multinomial case: fit K-1 models (one for each class vs reference class 0)
+  // Multinomial case: fit K-1 models (one for each class vs all others)
+  // For proper multinomial logistic regression, each model uses ALL samples
   const coefficients = [];
 
   for (let k = 1; k < K; k++) {
-    // Create binary outcome: 1 if class k, 0 if class 0
-    // Exclude other classes for this binary comparison
-    const indices = [];
-    const binaryY = [];
+    // Create binary outcome: 1 if class k, 0 otherwise (including reference AND other classes)
+    const binaryY = y.map(yi => (yi === k ? 1 : 0));
 
-    for (let i = 0; i < n; i++) {
-      if (y[i] === 0 || y[i] === k) {
-        indices.push(i);
-        binaryY.push(y[i] === k ? 1 : 0);
-      }
-    }
-
-    // Extract rows for this binary comparison
-    const Xbinary = new Matrix(indices.length, p);
-    for (let i = 0; i < indices.length; i++) {
-      for (let j = 0; j < p; j++) {
-        Xbinary.set(i, j, X.get(indices[i], j));
-      }
-    }
-
-    // Fit binary GAM for class k vs class 0
-    const result = fitMultinomialIRLS(Xbinary, binaryY, S, lambda, 2, { maxIter, tol });
+    // Fit binary GAM for class k vs all others using full data
+    const result = fitMultinomialIRLS(X, binaryY, S, lambda, 2, { maxIter, tol });
     coefficients.push(result.coefficients[0]);
   }
 
