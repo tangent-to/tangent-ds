@@ -12,13 +12,15 @@
  * Usage:
  *   const consensus = new ConsensusCluster({
  *     estimators: [
- *       new KMeans({ k: 3 }),
- *       new DBSCAN({ eps: 0.5 }),
- *       new HDBSCAN({ minClusterSize: 5 })
+ *       new KMeans({ k: 3, seed: 42 }),
+ *       new DBSCAN({ eps: 0.5, minSamples: 5 }),
+ *       new HCA({ k: 3, linkage: 'average' })
  *     ],
  *     threshold: 0.5
  *   });
- *   consensus.fit(data);
+ *   // Supports both table format and raw arrays
+ *   consensus.fit({ data: myData, columns: ['x', 'y', 'z'] });
+ *   // or: consensus.fit(numericMatrix);
  *   console.log(consensus.labels);
  */
 
@@ -48,11 +50,21 @@ export class ConsensusCluster {
 
   /**
    * Fit consensus clustering
-   * @param {Array} X - Data to cluster
+   * @param {Array|Object} X - Data to cluster (raw array or {data, columns})
    * @returns {this}
    */
   fit(X) {
-    const n = Array.isArray(X) ? X.length : X[0]?.length;
+    // Determine number of samples based on input format
+    let n;
+    if (X && typeof X === 'object' && X.data) {
+      // Table format: {data, columns}
+      n = X.data.length;
+    } else if (Array.isArray(X)) {
+      // Raw array format
+      n = X.length;
+    } else {
+      n = 0;
+    }
 
     if (!n) {
       throw new Error('Empty data provided');
@@ -63,7 +75,7 @@ export class ConsensusCluster {
 
     // Fit each estimator and accumulate co-associations
     for (const estimator of this.estimators) {
-      // Fit the estimator
+      // Fit the estimator (pass through original format)
       estimator.fit(X);
 
       // Get labels (handle both .labels property and .predict())
