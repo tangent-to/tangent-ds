@@ -7,9 +7,72 @@
  * - MahalanobisDistance: Statistical distance-based outlier detection
  */
 
-import { prepareX } from '../core/table.js';
-import { random, randomInt, sample as randomSample } from './utils.js';
-import { Matrix, pseudoInverse } from 'ml-matrix';
+import { normalize, applyColumns } from "../core/table.js";
+import { random, randomInt, sample as randomSample } from "./utils.js";
+import { Matrix, pseudoInverse } from "ml-matrix";
+
+/**
+ * Helper: Check if value is missing (NaN, null, undefined)
+ */
+function isMissing(value) {
+  return (
+    value === null ||
+    value === undefined ||
+    (typeof value === "number" && isNaN(value))
+  );
+}
+
+/**
+ * Helper: Convert {data, columns} format to 2D array, filtering out rows with missing values
+ * @param {Object} options - {data, columns, omit_missing}
+ * @returns {Object} {X: Array<Array<number>>, columns: Array<string>, rows: Array<Object>, validIndices: Array<number>}
+ */
+function tableToMatrixFiltered({ data, columns, omit_missing = true }) {
+  const rows = normalize(data);
+
+  if (rows.length === 0) {
+    throw new Error("Cannot prepare matrix from empty data");
+  }
+
+  // If no columns specified, auto-detect numeric columns
+  let selectedColumns = columns;
+  if (!selectedColumns) {
+    const firstRow = rows[0];
+    selectedColumns = Object.keys(firstRow).filter((key) => {
+      const val = firstRow[key];
+      return typeof val === "number" || isMissing(val);
+    });
+  } else if (typeof selectedColumns === "string") {
+    selectedColumns = [selectedColumns];
+  }
+
+  // Filter rows and track indices
+  const validRows = [];
+  const validIndices = [];
+
+  if (omit_missing) {
+    rows.forEach((row, idx) => {
+      const hasAllValues = selectedColumns.every((col) => !isMissing(row[col]));
+      if (hasAllValues) {
+        validRows.push(row);
+        validIndices.push(idx);
+      }
+    });
+  } else {
+    validRows.push(...rows);
+    validIndices.push(...rows.map((_, idx) => idx));
+  }
+
+  // Convert to 2D array
+  const X = validRows.map((row) =>
+    selectedColumns.map((col) => {
+      const val = row[col];
+      return isMissing(val) ? NaN : val;
+    }),
+  );
+
+  return { X, columns: selectedColumns, rows: validRows, validIndices };
+}
 
 // ============= IsolationForest =============
 
@@ -110,7 +173,7 @@ function averagePathLength(n) {
 
   // H(n-1) is harmonic number, approximated by ln(n-1) + Euler's constant
   const eulerConstant = 0.5772156649;
-  return 2 * (Math.log(n - 1) + eulerConstant) - (2 * (n - 1) / n);
+  return 2 * (Math.log(n - 1) + eulerConstant) - (2 * (n - 1)) / n;
 }
 
 /**
@@ -134,19 +197,22 @@ export class IsolationForest {
    * @param {number} options.contamination - Expected proportion of outliers (default: 0.1)
    * @param {number} options.max_features - Features to draw for each tree (default: 1.0 = all)
    * @param {number} options.random_state - Random seed (default: null)
+   * @param {string} options.label_column - Name of output column for predictions (default: 'outlier')
    */
   constructor({
     n_estimators = 100,
-    max_samples = 'auto',
+    max_samples = "auto",
     contamination = 0.1,
     max_features = 1.0,
-    random_state = null
+    random_state = null,
+    label_column = "outlier",
   } = {}) {
     this.n_estimators = n_estimators;
     this.max_samples = max_samples;
     this.contamination = contamination;
     this.max_features = max_features;
     this.random_state = random_state;
+    this.label_column = label_column;
 
     this.trees_ = null;
     this.max_samples_ = null;
@@ -154,49 +220,96 @@ export class IsolationForest {
     this.threshold_ = null;
     this.nFeatures_ = null;
     this._tableColumns = null;
+    this._originalData = null;
+    this._groupModels = null;
   }
 
   /**
    * Fit the model
-   * @param {Array<Array<number>>|Object} X - Training data (2D array, {data, columns}, or array of objects)
+   * @param {Array<Array<number>>|Object} X - Training data (2D array or {data, columns, group})
    * @returns {IsolationForest} this
    */
   fit(X) {
-    // Handle table input: {data, columns}
-    if (X && typeof X === 'object' && !Array.isArray(X) && (X.data || X.columns)) {
-      const prepared = prepareX({
-        columns: X.columns || X.X,
+    // Handle table input: {data, columns, group}
+    if (
+      X &&
+      typeof X === "object" &&
+      !Array.isArray(X) &&
+      (X.data || X.columns)
+    ) {
+      const groupBy = X.group;
+      this._originalData = X.data;
+
+      // Group-based detection
+      if (groupBy) {
+        this._groupModels = new Map();
+        const rows = normalize(X.data);
+        const groups = new Map();
+
+        // Group rows
+        rows.forEach((row, idx) => {
+          const groupKey = row[groupBy];
+          if (!groups.has(groupKey)) {
+            groups.set(groupKey, []);
+          }
+          groups.get(groupKey).push({ row, idx });
+        });
+
+        // Fit a model for each group
+        for (const [groupKey, groupData] of groups) {
+          const groupRows = groupData.map((d) => d.row);
+          const result = tableToMatrixFiltered({
+            data: groupRows,
+            columns: X.columns,
+            omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
+          });
+
+          if (result.X.length > 0) {
+            const model = this._fitSingleModel(result.X);
+            this._groupModels.set(groupKey, {
+              model,
+              indices: groupData.map((d) => d.idx),
+              columns: result.columns,
+            });
+          }
+        }
+
+        this._tableColumns = X.columns;
+        return this;
+      }
+
+      // Non-grouped detection
+      const result = tableToMatrixFiltered({
         data: X.data,
+        columns: X.columns,
         omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
       });
-      this._tableColumns = X.columns || X.X;
-      X = prepared.X;
-    }
-    // Handle array of objects (table rows)
-    else if (Array.isArray(X) && X.length > 0 && typeof X[0] === 'object' && !Array.isArray(X[0])) {
-      // Extract columns from first row
-      const columns = Object.keys(X[0]);
-      const prepared = prepareX({
-        columns: columns,
-        data: X,
-        omit_missing: true,
-      });
-      this._tableColumns = columns;
-      X = prepared.X;
+      this._tableColumns = result.columns;
+      X = result.X;
     }
 
     if (!Array.isArray(X) || !Array.isArray(X[0])) {
-      throw new Error('X must be a 2D array or table object');
+      throw new Error("X must be a 2D array or table object");
     }
 
+    this._fitSingleModel(X);
+    return this;
+  }
+
+  /**
+   * Internal method to fit a single isolation forest model
+   * @param {Array<Array<number>>} X - 2D array of numeric data
+   * @returns {Object} Model parameters
+   */
+  _fitSingleModel(X) {
     const n = X.length;
     const nFeatures = X[0].length;
     this.nFeatures_ = nFeatures;
 
     // Determine max_samples
-    if (this.max_samples === 'auto') {
+    if (this.max_samples === "auto") {
       this.max_samples_ = Math.min(256, n);
-    } else if (typeof this.max_samples === 'number' && this.max_samples <= 1) {
+    } else if (typeof this.max_samples === "number" && this.max_samples <= 1) {
       this.max_samples_ = Math.floor(this.max_samples * n);
     } else {
       this.max_samples_ = this.max_samples;
@@ -214,7 +327,7 @@ export class IsolationForest {
       for (let j = 0; j < this.max_samples_; j++) {
         sampleIndices.push(indices[randomInt(0, n)]);
       }
-      const sample = sampleIndices.map(idx => X[idx]);
+      const sample = sampleIndices.map((idx) => X[idx]);
 
       // Build tree
       const tree = buildIsolationTree(sample, heightLimit);
@@ -229,9 +342,10 @@ export class IsolationForest {
     const sortedScores = [...scores].sort((a, b) => a - b);
 
     // Number of expected outliers (at least 1 if contamination > 0)
-    const nOutliers = this.contamination > 0 ?
-      Math.max(1, Math.floor(this.contamination * n)) :
-      0;
+    const nOutliers =
+      this.contamination > 0
+        ? Math.max(1, Math.floor(this.contamination * n))
+        : 0;
 
     // Threshold is set so that scores below it are outliers
     // If we want k outliers, threshold should be sortedScores[k]
@@ -243,7 +357,13 @@ export class IsolationForest {
       this.threshold_ = sortedScores[nOutliers];
     }
 
-    return this;
+    return {
+      trees: this.trees_,
+      offset: this.offset_,
+      threshold: this.threshold_,
+      nFeatures: this.nFeatures_,
+      max_samples: this.max_samples_,
+    };
   }
 
   /**
@@ -255,11 +375,16 @@ export class IsolationForest {
    */
   score_samples(X) {
     if (this.trees_ === null) {
-      throw new Error('Model must be fitted before scoring');
+      throw new Error("Model must be fitted before scoring");
     }
 
     // Handle table input: {data, columns}
-    if (X && typeof X === 'object' && !Array.isArray(X) && (X.data || X.columns)) {
+    if (
+      X &&
+      typeof X === "object" &&
+      !Array.isArray(X) &&
+      (X.data || X.columns)
+    ) {
       const prepared = prepareX({
         columns: X.columns || X.X || this._tableColumns,
         data: X.data,
@@ -268,7 +393,12 @@ export class IsolationForest {
       X = prepared.X;
     }
     // Handle array of objects (table rows)
-    else if (Array.isArray(X) && X.length > 0 && typeof X[0] === 'object' && !Array.isArray(X[0])) {
+    else if (
+      Array.isArray(X) &&
+      X.length > 0 &&
+      typeof X[0] === "object" &&
+      !Array.isArray(X[0])
+    ) {
       const columns = this._tableColumns || Object.keys(X[0]);
       const prepared = prepareX({
         columns: columns,
@@ -279,11 +409,13 @@ export class IsolationForest {
     }
 
     if (!Array.isArray(X) || !Array.isArray(X[0])) {
-      throw new Error('X must be a 2D array or table object');
+      throw new Error("X must be a 2D array or table object");
     }
 
     if (X[0].length !== this.nFeatures_) {
-      throw new Error(`X has ${X[0].length} features, but model expected ${this.nFeatures_}`);
+      throw new Error(
+        `X has ${X[0].length} features, but model expected ${this.nFeatures_}`,
+      );
     }
 
     const scores = [];
@@ -311,25 +443,144 @@ export class IsolationForest {
 
   /**
    * Predict if samples are outliers
-   * @param {Array<Array<number>>|Object} X - Data
-   * @returns {Array<number>} Predictions: -1 for outliers, 1 for inliers
+   * @param {Array<Array<number>>|Object} X - Data (2D array or {data, columns, group})
+   * @returns {Array<number>|Array<Object>} Predictions: -1 for outliers, 1 for inliers (or table with outlier column)
    */
   predict(X) {
-    if (this.threshold_ === null) {
-      throw new Error('Model must be fitted before prediction');
+    // Handle table format with groups
+    if (
+      X &&
+      typeof X === "object" &&
+      !Array.isArray(X) &&
+      (X.data || X.columns)
+    ) {
+      const groupBy = X.group;
+      const rows = normalize(X.data);
+
+      // Group-based prediction
+      if (groupBy && this._groupModels) {
+        const labels = new Array(rows.length).fill(null);
+
+        for (const [groupKey, groupInfo] of this._groupModels) {
+          const groupRows = rows.filter((row) => row[groupBy] === groupKey);
+          if (groupRows.length === 0) continue;
+
+          const result = tableToMatrixFiltered({
+            data: groupRows,
+            columns: groupInfo.columns,
+            omit_missing: true,
+          });
+
+          if (result.X.length > 0) {
+            const groupLabels = this._predictWithModel(
+              result.X,
+              groupInfo.model,
+            );
+
+            // Map back to original indices
+            result.validIndices.forEach((validIdx, i) => {
+              const originalIdx = rows.findIndex(
+                (r) => r === groupRows[validIdx],
+              );
+              if (originalIdx !== -1) {
+                labels[originalIdx] = groupLabels[i];
+              }
+            });
+          }
+        }
+
+        // Return full table with outlier column
+        return rows.map((row, idx) => ({
+          ...row,
+          [this.label_column]: labels[idx] !== null ? labels[idx] : 1, // Default to inlier if missing
+        }));
+      }
+
+      // Non-grouped table prediction
+      const result = tableToMatrixFiltered({
+        data: X.data,
+        columns: X.columns || this._tableColumns,
+        omit_missing: true,
+      });
+
+      const labels = new Array(rows.length).fill(1); // Default to inliers
+      const predictions = this._predictWithModel(result.X, {
+        trees: this.trees_,
+        offset: this.offset_,
+        threshold: this.threshold_,
+        nFeatures: this.nFeatures_,
+      });
+
+      // Map predictions back to original indices
+      result.validIndices.forEach((originalIdx, i) => {
+        labels[originalIdx] = predictions[i];
+      });
+
+      // Return full table with outlier column
+      return rows.map((row, idx) => ({
+        ...row,
+        [this.label_column]: labels[idx],
+      }));
+    }
+
+    // Array format (backward compatibility)
+    if (this.threshold_ === null && !this._groupModels) {
+      throw new Error("Model must be fitted before prediction");
     }
 
     const scores = this.score_samples(X);
-    return scores.map(score => score < this.threshold_ ? -1 : 1);
+    return scores.map((score) => (score < this.threshold_ ? -1 : 1));
   }
 
   /**
-   * Fit and predict in one step
-   * @param {Array<Array<number>>|Object} X - Data
-   * @returns {Array<number>} Predictions: -1 for outliers, 1 for inliers
+   * Internal method to predict with a specific model
+   * @param {Array<Array<number>>} X - Data
+   * @param {Object} model - Model parameters
+   * @returns {Array<number>} Predictions
+   */
+  _predictWithModel(X, model) {
+    const scores = [];
+    for (let i = 0; i < X.length; i++) {
+      const x = X[i];
+      let avgPathLength = 0;
+      for (const tree of model.trees) {
+        avgPathLength += pathLength(x, tree);
+      }
+      avgPathLength /= model.trees.length;
+      const rawScore = Math.pow(2, -avgPathLength / model.offset);
+      const score = -rawScore;
+      scores.push(score);
+    }
+    return scores.map((score) => (score < model.threshold ? -1 : 1));
+  }
+
+  /**
+   * Transform data by adding outlier labels
+   * Alias for predict() - primary API for table-based workflows
+   * @param {Array<Array<number>>|Object} X - Data (2D array or {data, columns, group})
+   * @returns {Array<number>|Array<Object>} Labels or table with outlier column
+   */
+  transform(X) {
+    return this.predict(X);
+  }
+
+  /**
+   * Fit and transform in one step
+   * Primary API for outlier detection with tables
+   * @param {Array<Array<number>>|Object} X - Data (2D array or {data, columns, group})
+   * @returns {Array<number>|Array<Object>} Labels or table with outlier column
+   */
+  fit_transform(X) {
+    return this.fit(X).transform(X);
+  }
+
+  /**
+   * Fit and predict in one step (sklearn compatibility)
+   * @param {Array<Array<number>>|Object} X - Data (2D array or {data, columns, group})
+   * @returns {Array<number>|Array<Object>} Predictions: -1 for outliers, 1 for inliers (or table with outlier column)
    */
   fit_predict(X) {
-    return this.fit(X).predict(X);
+    return this.fit_transform(X);
   }
 }
 
@@ -370,13 +621,13 @@ export class LocalOutlierFactor {
    */
   constructor({
     n_neighbors = 20,
-    algorithm = 'auto',
+    algorithm = "auto",
     metric = null,
     contamination = 0.1,
-    novelty = false
+    novelty = false,
   } = {}) {
     if (n_neighbors <= 0) {
-      throw new Error('n_neighbors must be positive');
+      throw new Error("n_neighbors must be positive");
     }
 
     this.n_neighbors = n_neighbors;
@@ -400,7 +651,12 @@ export class LocalOutlierFactor {
    */
   fit(X) {
     // Handle table input: {data, columns}
-    if (X && typeof X === 'object' && !Array.isArray(X) && (X.data || X.columns)) {
+    if (
+      X &&
+      typeof X === "object" &&
+      !Array.isArray(X) &&
+      (X.data || X.columns)
+    ) {
       const prepared = prepareX({
         columns: X.columns || X.X,
         data: X.data,
@@ -410,7 +666,12 @@ export class LocalOutlierFactor {
       X = prepared.X;
     }
     // Handle array of objects (table rows)
-    else if (Array.isArray(X) && X.length > 0 && typeof X[0] === 'object' && !Array.isArray(X[0])) {
+    else if (
+      Array.isArray(X) &&
+      X.length > 0 &&
+      typeof X[0] === "object" &&
+      !Array.isArray(X[0])
+    ) {
       const columns = Object.keys(X[0]);
       const prepared = prepareX({
         columns: columns,
@@ -422,15 +683,17 @@ export class LocalOutlierFactor {
     }
 
     if (!Array.isArray(X) || !Array.isArray(X[0])) {
-      throw new Error('X must be a 2D array or table object');
+      throw new Error("X must be a 2D array or table object");
     }
 
     const n = X.length;
-    this.X_ = X.map(row => [...row]); // Store copy
+    this.X_ = X.map((row) => [...row]); // Store copy
     this.nFeatures_ = X[0].length;
 
     if (this.n_neighbors >= n) {
-      throw new Error(`n_neighbors (${this.n_neighbors}) must be less than n_samples (${n})`);
+      throw new Error(
+        `n_neighbors (${this.n_neighbors}) must be less than n_samples (${n})`,
+      );
     }
 
     // Compute pairwise distances
@@ -450,7 +713,7 @@ export class LocalOutlierFactor {
       dists.sort((a, b) => a.dist - b.dist);
       const neighbors = dists.slice(0, this.n_neighbors);
 
-      kNeighbors[i] = neighbors.map(n => n.idx);
+      kNeighbors[i] = neighbors.map((n) => n.idx);
       kDistances[i] = neighbors[this.n_neighbors - 1].dist; // k-distance
     }
 
@@ -463,7 +726,10 @@ export class LocalOutlierFactor {
           reachabilityDistances[i][j] = 0;
         } else {
           // reach-dist(A,B) = max(k-distance(B), dist(A,B))
-          reachabilityDistances[i][j] = Math.max(kDistances[j], distances[i][j]);
+          reachabilityDistances[i][j] = Math.max(
+            kDistances[j],
+            distances[i][j],
+          );
         }
       }
     }
@@ -490,13 +756,14 @@ export class LocalOutlierFactor {
     }
 
     // Compute threshold based on contamination
-    const lofScores = this.negative_outlier_factor_.map(x => -x); // Convert back to positive
+    const lofScores = this.negative_outlier_factor_.map((x) => -x); // Convert back to positive
     const sortedScores = [...lofScores].sort((a, b) => b - a); // Descending (higher LOF = outlier)
 
     // Number of expected outliers (at least 1 if contamination > 0)
-    const nOutliers = this.contamination > 0 ?
-      Math.max(1, Math.floor(this.contamination * n)) :
-      0;
+    const nOutliers =
+      this.contamination > 0
+        ? Math.max(1, Math.floor(this.contamination * n))
+        : 0;
 
     // Threshold: negative_outlier_factor_ values below this are outliers
     // Higher LOF (more positive) = outlier, so more negative = outlier in our negative scale
@@ -540,19 +807,21 @@ export class LocalOutlierFactor {
    */
   predict(X) {
     if (this.negative_outlier_factor_ === null) {
-      throw new Error('Model must be fitted before prediction');
+      throw new Error("Model must be fitted before prediction");
     }
 
     if (!this.novelty) {
       // Can only predict on training data
       if (X !== this.X_ && (!Array.isArray(X) || X.length !== this.X_.length)) {
-        throw new Error('LocalOutlierFactor with novelty=false can only predict on training data');
+        throw new Error(
+          "LocalOutlierFactor with novelty=false can only predict on training data",
+        );
       }
     }
 
     // For non-novelty mode, use precomputed scores
-    return this.negative_outlier_factor_.map(score =>
-      score < this.threshold_ ? -1 : 1
+    return this.negative_outlier_factor_.map((score) =>
+      score < this.threshold_ ? -1 : 1,
     );
   }
 
@@ -597,7 +866,7 @@ export class MahalanobisDistance {
    */
   constructor({ contamination = 0.1, use_chi2 = true } = {}) {
     if (contamination < 0 || contamination > 0.5) {
-      throw new Error('contamination must be in [0, 0.5]');
+      throw new Error("contamination must be in [0, 0.5]");
     }
 
     this.contamination = contamination;
@@ -616,7 +885,12 @@ export class MahalanobisDistance {
    */
   fit(X) {
     // Handle table input: {data, columns}
-    if (X && typeof X === 'object' && !Array.isArray(X) && (X.data || X.columns)) {
+    if (
+      X &&
+      typeof X === "object" &&
+      !Array.isArray(X) &&
+      (X.data || X.columns)
+    ) {
       const prepared = prepareX({
         columns: X.columns || X.X,
         data: X.data,
@@ -626,7 +900,12 @@ export class MahalanobisDistance {
       X = prepared.X;
     }
     // Handle array of objects (table rows)
-    else if (Array.isArray(X) && X.length > 0 && typeof X[0] === 'object' && !Array.isArray(X[0])) {
+    else if (
+      Array.isArray(X) &&
+      X.length > 0 &&
+      typeof X[0] === "object" &&
+      !Array.isArray(X[0])
+    ) {
       const columns = Object.keys(X[0]);
       const prepared = prepareX({
         columns: columns,
@@ -638,7 +917,7 @@ export class MahalanobisDistance {
     }
 
     if (!Array.isArray(X) || !Array.isArray(X[0])) {
-      throw new Error('X must be a 2D array or table object');
+      throw new Error("X must be a 2D array or table object");
     }
 
     const n = X.length;
@@ -646,7 +925,9 @@ export class MahalanobisDistance {
     this.nFeatures_ = nFeatures;
 
     if (n < nFeatures) {
-      throw new Error('Number of samples must be >= number of features for robust estimation');
+      throw new Error(
+        "Number of samples must be >= number of features for robust estimation",
+      );
     }
 
     // Compute mean
@@ -664,7 +945,9 @@ export class MahalanobisDistance {
     const Xmat = new Matrix(X);
     const meanMat = Matrix.ones(n, 1).mmul(new Matrix([this.mean_]));
     const Xcentered = Xmat.sub(meanMat);
-    const cov = Xcentered.transpose().mmul(Xcentered).div(n - 1);
+    const cov = Xcentered.transpose()
+      .mmul(Xcentered)
+      .div(n - 1);
 
     // Compute precision matrix (inverse covariance) using pseudoinverse
     // This handles singular/near-singular covariance matrices
@@ -678,11 +961,13 @@ export class MahalanobisDistance {
       // Use chi-squared percentile for threshold
       // For now, use empirical contamination-based threshold
       const nOutliers = Math.max(1, Math.floor(this.contamination * n));
-      this.threshold_ = nOutliers >= n ? Infinity : sortedDistances[n - nOutliers];
+      this.threshold_ =
+        nOutliers >= n ? Infinity : sortedDistances[n - nOutliers];
     } else {
       // Simple empirical threshold
       const nOutliers = Math.max(1, Math.floor(this.contamination * n));
-      this.threshold_ = nOutliers >= n ? Infinity : sortedDistances[n - nOutliers];
+      this.threshold_ =
+        nOutliers >= n ? Infinity : sortedDistances[n - nOutliers];
     }
 
     return this;
@@ -706,7 +991,10 @@ export class MahalanobisDistance {
 
       // Compute Mahalanobis distance: sqrt((x - μ)' * Σ^(-1) * (x - μ))
       const diffMat = new Matrix([diff]);
-      const mahal_sq = diffMat.mmul(this.precision_).mmul(diffMat.transpose()).get(0, 0);
+      const mahal_sq = diffMat
+        .mmul(this.precision_)
+        .mmul(diffMat.transpose())
+        .get(0, 0);
       const distance = Math.sqrt(Math.max(0, mahal_sq)); // Ensure non-negative
 
       distances.push(distance);
@@ -722,11 +1010,16 @@ export class MahalanobisDistance {
    */
   score_samples(X) {
     if (this.mean_ === null || this.precision_ === null) {
-      throw new Error('Model must be fitted before scoring');
+      throw new Error("Model must be fitted before scoring");
     }
 
     // Handle table input: {data, columns}
-    if (X && typeof X === 'object' && !Array.isArray(X) && (X.data || X.columns)) {
+    if (
+      X &&
+      typeof X === "object" &&
+      !Array.isArray(X) &&
+      (X.data || X.columns)
+    ) {
       const prepared = prepareX({
         columns: X.columns || X.X || this._tableColumns,
         data: X.data,
@@ -735,7 +1028,12 @@ export class MahalanobisDistance {
       X = prepared.X;
     }
     // Handle array of objects (table rows)
-    else if (Array.isArray(X) && X.length > 0 && typeof X[0] === 'object' && !Array.isArray(X[0])) {
+    else if (
+      Array.isArray(X) &&
+      X.length > 0 &&
+      typeof X[0] === "object" &&
+      !Array.isArray(X[0])
+    ) {
       const columns = this._tableColumns || Object.keys(X[0]);
       const prepared = prepareX({
         columns: columns,
@@ -746,16 +1044,18 @@ export class MahalanobisDistance {
     }
 
     if (!Array.isArray(X) || !Array.isArray(X[0])) {
-      throw new Error('X must be a 2D array or table object');
+      throw new Error("X must be a 2D array or table object");
     }
 
     if (X[0].length !== this.nFeatures_) {
-      throw new Error(`X has ${X[0].length} features, but detector expected ${this.nFeatures_}`);
+      throw new Error(
+        `X has ${X[0].length} features, but detector expected ${this.nFeatures_}`,
+      );
     }
 
     const distances = this._mahalanobis_distances(X);
     // Return negative distances (sklearn convention: lower = outlier)
-    return distances.map(d => -d);
+    return distances.map((d) => -d);
   }
 
   /**
@@ -765,12 +1065,12 @@ export class MahalanobisDistance {
    */
   predict(X) {
     if (this.threshold_ === null) {
-      throw new Error('Model must be fitted before prediction');
+      throw new Error("Model must be fitted before prediction");
     }
 
     const scores = this.score_samples(X);
     // Outliers have lower scores (more negative), i.e., higher distances
-    return scores.map(score => -score >= this.threshold_ ? -1 : 1);
+    return scores.map((score) => (-score >= this.threshold_ ? -1 : 1));
   }
 
   /**
@@ -788,7 +1088,7 @@ export class MahalanobisDistance {
    */
   get mahalanobis_distances() {
     if (this.mean_ === null) {
-      throw new Error('Model must be fitted first');
+      throw new Error("Model must be fitted first");
     }
     return this._mahalanobis_distances_cache || [];
   }
