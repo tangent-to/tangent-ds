@@ -2,12 +2,15 @@
  * Random Forest estimators built on top of Decision Trees.
  */
 
-import { Classifier, Regressor } from '../../core/estimators/estimator.js';
-import { prepareXY, prepareX } from '../../core/table.js';
-import { DecisionTreeClassifier, DecisionTreeRegressor } from './DecisionTree.js';
+import { Classifier, Regressor } from "../../core/estimators/estimator.js";
+import { prepareXY, prepareX } from "../../core/table.js";
+import {
+  DecisionTreeClassifier,
+  DecisionTreeRegressor,
+} from "./DecisionTree.js";
 
 function toNumericMatrix(X) {
-  return X.map((row) => Array.isArray(row) ? row.map(Number) : [Number(row)]);
+  return X.map((row) => (Array.isArray(row) ? row.map(Number) : [Number(row)]));
 }
 
 function bootstrapSample(X, y, random, maxSamples = null) {
@@ -43,7 +46,7 @@ function createRandomGenerator(seed) {
 function prepareDataset(X, y) {
   if (
     X &&
-    typeof X === 'object' &&
+    typeof X === "object" &&
     !Array.isArray(X) &&
     (X.data || X.X || X.columns)
   ) {
@@ -51,32 +54,47 @@ function prepareDataset(X, y) {
       X: X.X || X.columns,
       y: X.y,
       data: X.data,
+<<<<<<< Updated upstream
       omit_missing: X.omit_missing !== undefined ? X.omit_missing : true
+=======
+      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
+      encoders: X.encoders, // Pass encoders for label encoding
+>>>>>>> Stashed changes
     });
     return {
       X: toNumericMatrix(prepared.X),
       y: prepared.y,
+<<<<<<< Updated upstream
       columns: prepared.columnsX
+=======
+      columns: prepared.columnsX,
+      encoders: prepared.encoders, // Return encoders
+>>>>>>> Stashed changes
     };
   }
   return {
     X: toNumericMatrix(X),
     y: Array.isArray(y) ? y.slice() : Array.from(y),
+<<<<<<< Updated upstream
     columns: null
+=======
+    columns: null,
+    encoders: null,
+>>>>>>> Stashed changes
   };
 }
 
 function preparePredict(X, columns) {
   if (
     X &&
-    typeof X === 'object' &&
+    typeof X === "object" &&
     !Array.isArray(X) &&
     (X.data || X.X || X.columns)
   ) {
     const prepared = prepareX({
       columns: X.X || X.columns || columns,
       data: X.data,
-      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true
+      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
     });
     return toNumericMatrix(prepared.X);
   }
@@ -87,7 +105,7 @@ function computeFeatureImportances(tree, nFeatures, nSamples) {
   const importances = new Array(nFeatures).fill(0);
 
   function traverse(node, nNodeSamples) {
-    if (!node || node.type === 'leaf') return;
+    if (!node || node.type === "leaf") return;
 
     // For internal nodes, compute weighted impurity decrease
     const feature = node.feature;
@@ -111,9 +129,9 @@ function applyClassWeights(y, classWeight) {
   if (!classWeight) return null;
 
   const weights = new Array(y.length).fill(1);
-  if (classWeight === 'balanced') {
+  if (classWeight === "balanced") {
     const counts = new Map();
-    y.forEach(label => counts.set(label, (counts.get(label) || 0) + 1));
+    y.forEach((label) => counts.set(label, (counts.get(label) || 0) + 1));
     const nSamples = y.length;
     const nClasses = counts.size;
     const weightMap = new Map();
@@ -123,7 +141,7 @@ function applyClassWeights(y, classWeight) {
     y.forEach((label, i) => {
       weights[i] = weightMap.get(label);
     });
-  } else if (typeof classWeight === 'object') {
+  } else if (typeof classWeight === "object") {
     y.forEach((label, i) => {
       weights[i] = classWeight[label] || 1;
     });
@@ -202,8 +220,8 @@ class RandomForestBase {
     classWeight = null,
     warmStart = false,
     oobScore = false,
-    task = 'classification',
-    seed = null
+    task = "classification",
+    seed = null,
   } = {}) {
     this.nEstimators = nEstimators;
     this.maxDepth = maxDepth;
@@ -228,6 +246,7 @@ class RandomForestBase {
     const prepared = prepareDataset(X, y);
     this.columns = prepared.columns;
 
+<<<<<<< Updated upstream
     const featureCount = prepared.X[0].length;
     const nSamples = prepared.X.length;
     const defaultMaxFeatures = this.task === 'classification'
@@ -240,6 +259,26 @@ class RandomForestBase {
     const classWeights = this.task === 'classification'
       ? applyClassWeights(prepared.y, this.classWeight)
       : null;
+=======
+  _fitPrepared(X, y, columns, sampleWeight = null) {
+    this.columns = columns;
+
+    const featureCount = X[0].length;
+    const nSamples = X.length;
+    const defaultMaxFeatures =
+      this.task === "classification"
+        ? Math.max(1, Math.floor(Math.sqrt(featureCount)))
+        : Math.max(1, Math.floor(featureCount / 3));
+    const featureBagSize = this.maxFeatures || defaultMaxFeatures;
+    this.classes =
+      this.task === "classification" ? Array.from(new Set(y)) : null;
+
+    // Apply class weights if specified
+    const classWeights =
+      this.task === "classification"
+        ? applyClassWeights(y, this.classWeight)
+        : null;
+>>>>>>> Stashed changes
 
     // Combine class weights and sample weights
     const combinedWeights = applySampleWeights(prepared.y, sampleWeight, classWeights);
@@ -254,7 +293,9 @@ class RandomForestBase {
     const featureImportances = new Array(featureCount).fill(0);
 
     // Initialize OOB tracking
-    const oobPredictions = this.oobScore ? new Array(nSamples).fill(null).map(() => []) : null;
+    const oobPredictions = this.oobScore
+      ? new Array(nSamples).fill(null).map(() => [])
+      : null;
 
     for (let i = startIdx; i < this.nEstimators; i++) {
       const { XSample, ySample, oobIndices } = weightedBootstrapSample(
@@ -262,7 +303,7 @@ class RandomForestBase {
         prepared.y,
         combinedWeights,
         this.random,
-        this.maxSamples
+        this.maxSamples,
       );
 
       const treeOpts = {
@@ -270,25 +311,34 @@ class RandomForestBase {
         minSamplesSplit: this.minSamplesSplit,
         minGain: this.minImpurityDecrease,
         maxFeatures: featureBagSize,
-        random: this.random
+        random: this.random,
       };
 
-      const tree = this.task === 'classification'
-        ? new DecisionTreeClassifier(treeOpts)
-        : new DecisionTreeRegressor(treeOpts);
+      const tree =
+        this.task === "classification"
+          ? new DecisionTreeClassifier(treeOpts)
+          : new DecisionTreeRegressor(treeOpts);
 
       tree.fit(XSample, ySample);
       this.trees.push(tree);
 
       // Compute feature importances for this tree
-      const treeImportances = computeFeatureImportances(tree.tree, featureCount, nSamples);
+      const treeImportances = computeFeatureImportances(
+        tree.tree,
+        featureCount,
+        nSamples,
+      );
       for (let f = 0; f < featureCount; f++) {
         featureImportances[f] += treeImportances[f];
       }
 
       // Compute OOB predictions if enabled
       if (this.oobScore && oobIndices.length > 0) {
+<<<<<<< Updated upstream
         const oobX = oobIndices.map(idx => prepared.X[idx]);
+=======
+        const oobX = oobIndices.map((idx) => X[idx]);
+>>>>>>> Stashed changes
         const oobPreds = tree.predict(oobX);
         oobIndices.forEach((idx, j) => {
           oobPredictions[idx].push(oobPreds[j]);
@@ -299,7 +349,9 @@ class RandomForestBase {
     // Normalize feature importances
     const totalImportance = featureImportances.reduce((a, b) => a + b, 0);
     if (totalImportance > 0) {
-      this._featureImportances = featureImportances.map(x => x / totalImportance);
+      this._featureImportances = featureImportances.map(
+        (x) => x / totalImportance,
+      );
     } else {
       this._featureImportances = featureImportances;
     }
@@ -318,14 +370,14 @@ class RandomForestBase {
     let correct = 0;
     let mse = 0;
 
-    if (this.task === 'classification') {
+    if (this.task === "classification") {
       for (let i = 0; i < n; i++) {
         if (oobPredictions[i].length === 0) continue;
         validCount++;
 
         // Majority vote
         const counts = new Map();
-        oobPredictions[i].forEach(pred => {
+        oobPredictions[i].forEach((pred) => {
           counts.set(pred, (counts.get(pred) || 0) + 1);
         });
         let bestLabel = null;
@@ -349,7 +401,9 @@ class RandomForestBase {
         if (oobPredictions[i].length === 0) continue;
         validCount++;
 
-        const meanPred = oobPredictions[i].reduce((a, b) => a + b, 0) / oobPredictions[i].length;
+        const meanPred =
+          oobPredictions[i].reduce((a, b) => a + b, 0) /
+          oobPredictions[i].length;
         const error = meanPred - yTrue[i];
         mse += error * error;
       }
@@ -363,7 +417,7 @@ class RandomForestBase {
           const error = yTrue[i] - yMean;
           totalSS += error * error;
         }
-        this._oobScore = totalSS > 0 ? 1 - (mse / totalSS) : null;
+        this._oobScore = totalSS > 0 ? 1 - mse / totalSS : null;
       } else {
         this._oobScore = null;
       }
@@ -377,7 +431,7 @@ class RandomForestBase {
     const predictions = [];
 
     for (const row of data) {
-      if (this.task === 'classification') {
+      if (this.task === "classification") {
         const votes = new Map();
         this.trees.forEach((tree) => {
           const pred = tree.predict([row])[0];
@@ -410,7 +464,7 @@ class RandomForestBase {
    */
   apply(X) {
     if (!this.fitted) {
-      throw new Error('RandomForest: estimator not fitted.');
+      throw new Error("RandomForest: estimator not fitted.");
     }
 
     const data = preparePredict(X, this.columns);
@@ -429,7 +483,7 @@ class RandomForestBase {
   }
 
   _getLeafIndex(row, node, idx) {
-    if (node.type === 'leaf') {
+    if (node.type === "leaf") {
       return idx;
     }
     if (row[node.feature] <= node.threshold) {
@@ -444,7 +498,7 @@ class RandomForestBase {
    */
   decisionPath(X) {
     if (!this.fitted) {
-      throw new Error('RandomForest: estimator not fitted.');
+      throw new Error("RandomForest: estimator not fitted.");
     }
 
     const data = preparePredict(X, this.columns);
@@ -466,7 +520,7 @@ class RandomForestBase {
   _recordPath(row, node, path) {
     if (!node) return;
     path.push(node);
-    if (node.type === 'leaf') return;
+    if (node.type === "leaf") return;
 
     if (row[node.feature] <= node.threshold) {
       this._recordPath(row, node.left, path);
@@ -477,17 +531,19 @@ class RandomForestBase {
 
   get featureImportances() {
     if (!this.fitted) {
-      throw new Error('RandomForest: estimator not fitted.');
+      throw new Error("RandomForest: estimator not fitted.");
     }
     return this._featureImportances;
   }
 
   get oobScoreValue() {
     if (!this.fitted) {
-      throw new Error('RandomForest: estimator not fitted.');
+      throw new Error("RandomForest: estimator not fitted.");
     }
     if (!this.oobScore) {
-      throw new Error('RandomForest: oobScore=true must be set to compute OOB score.');
+      throw new Error(
+        "RandomForest: oobScore=true must be set to compute OOB score.",
+      );
     }
     return this._oobScore;
   }
@@ -496,11 +552,35 @@ class RandomForestBase {
 export class RandomForestClassifier extends Classifier {
   constructor(opts = {}) {
     super(opts);
-    this.forest = new RandomForestBase({ ...opts, task: 'classification' });
+    this.forest = new RandomForestBase({ ...opts, task: "classification" });
   }
 
   fit(X, y = null, sampleWeight = null) {
+<<<<<<< Updated upstream
     this.forest.fit(X, y, sampleWeight);
+=======
+    const prepared = prepareDataset(X, y);
+
+    // Use centralized label encoder extraction
+    this._extractLabelEncoder(prepared);
+
+    // Use centralized class extraction to handle encoded labels
+    const { numericY, classes } = this._getClasses(prepared.y, false);
+
+    // Store classes on both this instance and the forest
+    this.classes_ = classes;
+    this.forest.classes_ = classes;
+    this.forest.classes = classes;
+
+    // Fit forest with numeric labels using prepared data
+    this.forest._fitPrepared(
+      prepared.X,
+      numericY,
+      prepared.columns,
+      sampleWeight,
+    );
+
+>>>>>>> Stashed changes
     this.fitted = true;
     return this;
   }
@@ -510,7 +590,7 @@ export class RandomForestClassifier extends Classifier {
   }
 
   predictProba(X) {
-    if (!this.fitted) throw new Error('RandomForest: estimator not fitted.');
+    if (!this.fitted) throw new Error("RandomForest: estimator not fitted.");
     const data = preparePredict(X, this.forest.columns);
     const proba = [];
     const labels = this.forest.classes;
@@ -565,7 +645,7 @@ export class RandomForestClassifier extends Classifier {
 export class RandomForestRegressor extends Regressor {
   constructor(opts = {}) {
     super(opts);
-    this.forest = new RandomForestBase({ ...opts, task: 'regression' });
+    this.forest = new RandomForestBase({ ...opts, task: "regression" });
   }
 
   fit(X, y = null, sampleWeight = null) {
@@ -609,5 +689,5 @@ export class RandomForestRegressor extends Regressor {
 
 export default {
   RandomForestClassifier,
-  RandomForestRegressor
+  RandomForestRegressor,
 };

@@ -78,10 +78,10 @@ export class Estimator {
     const json = this.toJSON();
     const wrapped = {
       __tangentds__: true,
-      version: '0.7.0',
+      version: "0.7.0",
       timestamp: new Date().toISOString(),
       estimatorType: this.constructor.name,
-      data: json
+      data: json,
     };
     return JSON.stringify(wrapped, null, 2);
   }
@@ -94,7 +94,7 @@ export class Estimator {
   static load(jsonString) {
     const parsed = JSON.parse(jsonString);
     if (!parsed.__tangentds__) {
-      throw new Error('Invalid model format: missing __tangentds__ marker');
+      throw new Error("Invalid model format: missing __tangentds__ marker");
     }
     return this.fromJSON(parsed.data);
   }
@@ -115,7 +115,9 @@ export class Estimator {
   _prepareArgsForFit(args = []) {
     // If called as fit({ X, y, data, ... })
     if (
-      args.length === 1 && args[0] && typeof args[0] === "object" &&
+      args.length === 1 &&
+      args[0] &&
+      typeof args[0] === "object" &&
       !Array.isArray(args[0])
     ) {
       const opts = args[0];
@@ -126,9 +128,8 @@ export class Estimator {
             X: opts.X,
             y: opts.y,
             data: opts.data,
-            omit_missing: opts.omit_missing !== undefined
-              ? opts.omit_missing
-              : true,
+            omit_missing:
+              opts.omit_missing !== undefined ? opts.omit_missing : true,
           });
           return {
             X: prepared.X,
@@ -142,9 +143,8 @@ export class Estimator {
         const prepared = prepareX({
           columns: opts.columns || opts.X,
           data: opts.data,
-          omit_missing: opts.omit_missing !== undefined
-            ? opts.omit_missing
-            : true,
+          omit_missing:
+            opts.omit_missing !== undefined ? opts.omit_missing : true,
         });
         return {
           X: prepared.X,
@@ -200,8 +200,10 @@ export class Regressor extends Estimator {
   score(yTrueOrOpts, yPred = null, opts = {}) {
     // If first argument is an options object assume we need to predict
     if (
-      arguments.length === 1 && yTrueOrOpts &&
-      typeof yTrueOrOpts === "object" && !Array.isArray(yTrueOrOpts)
+      arguments.length === 1 &&
+      yTrueOrOpts &&
+      typeof yTrueOrOpts === "object" &&
+      !Array.isArray(yTrueOrOpts)
     ) {
       // Expect { X, y, data }
       const { X, y, data, omit_missing = true } = yTrueOrOpts;
@@ -223,7 +225,8 @@ export class Regressor extends Estimator {
 
   _r2(yTrue, yPred) {
     if (
-      !Array.isArray(yTrue) || !Array.isArray(yPred) ||
+      !Array.isArray(yTrue) ||
+      !Array.isArray(yPred) ||
       yTrue.length !== yPred.length
     ) {
       throw new Error("yTrue and yPred must be arrays of same length for R^2");
@@ -235,7 +238,7 @@ export class Regressor extends Estimator {
       ssTot += (yTrue[i] - yMean) ** 2;
       ssRes += (yTrue[i] - yPred[i]) ** 2;
     }
-    return ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
+    return ssTot === 0 ? 0 : 1 - ssRes / ssTot;
   }
 }
 
@@ -245,6 +248,92 @@ export class Regressor extends Estimator {
 export class Classifier extends Estimator {
   constructor(params = {}) {
     super(params);
+<<<<<<< Updated upstream
+=======
+    this.labelEncoder_ = null;
+    this.classes_ = null;
+  }
+
+  /**
+   * Extract and store label encoder from prepared data
+   * @param {Object} prepared - Result from prepareXY/prepareDataset
+   * @returns {boolean} True if encoder was found and stored
+   */
+  _extractLabelEncoder(prepared) {
+    if (prepared && prepared.encoders && prepared.encoders.y) {
+      this.labelEncoder_ = prepared.encoders.y;
+      if (this.labelEncoder_.classes_) {
+        this.classes_ = this.labelEncoder_.classes_.slice();
+      }
+      return true;
+    }
+    this.labelEncoder_ = null;
+    this.classes_ = null;
+    return false;
+  }
+
+  /**
+   * Get unique classes from labels (encoded or raw)
+   * If labelEncoder exists, preparedY is assumed to be numeric indices [0, 1, 2, ...]
+   * Otherwise, creates classes from unique values in preparedY
+   *
+   * @param {Array} preparedY - Label array (numeric if encoded, or raw labels)
+   * @param {boolean} onlyPresentClasses - If true, only return classes present in preparedY
+   * @returns {Object} { numericY, classes }
+   */
+  _getClasses(preparedY, onlyPresentClasses = true) {
+    if (this.labelEncoder_) {
+      // preparedY is already encoded as numbers by prepareXY
+      const numericY = preparedY;
+
+      if (onlyPresentClasses) {
+        // Get only classes actually present in training data
+        const uniqueIndices = Array.from(new Set(numericY)).sort(
+          (a, b) => a - b,
+        );
+        const classes = uniqueIndices.map(
+          (idx) => this.labelEncoder_.classes_[idx],
+        );
+        return { numericY, classes };
+      } else {
+        // Return all classes from encoder
+        return { numericY, classes: this.labelEncoder_.classes_.slice() };
+      }
+    } else {
+      // No encoder - handle string or numeric labels
+      const uniqueLabels = Array.from(new Set(preparedY));
+
+      if (typeof uniqueLabels[0] === "string") {
+        // Create our own mapping for string labels
+        const classes = uniqueLabels.sort();
+        const classMap = {};
+        classes.forEach((label, idx) => (classMap[label] = idx));
+        const numericY = preparedY.map((label) => classMap[label]);
+        return { numericY, classes };
+      } else {
+        // Already numeric
+        const numericY = preparedY;
+        const classes = uniqueLabels.sort((a, b) => a - b);
+        return { numericY, classes };
+      }
+    }
+  }
+
+  /**
+   * Decode numeric predictions to original labels
+   * @param {Array} predictions - Numeric predictions or label strings
+   * @returns {Array} Decoded labels (or original if no encoder)
+   */
+  _decodeLabels(predictions) {
+    if (this.labelEncoder_) {
+      return this.labelEncoder_.inverseTransform(predictions);
+    }
+    // If we have classes_ but no encoder, manually decode
+    if (this.classes_ && typeof this.classes_[0] === "string") {
+      return predictions.map((pred) => this.classes_[pred]);
+    }
+    return predictions;
+>>>>>>> Stashed changes
   }
 
   /**
@@ -254,8 +343,10 @@ export class Classifier extends Estimator {
    */
   score(yTrueOrOpts, yPred = null, opts = {}) {
     if (
-      arguments.length === 1 && yTrueOrOpts &&
-      typeof yTrueOrOpts === "object" && !Array.isArray(yTrueOrOpts)
+      arguments.length === 1 &&
+      yTrueOrOpts &&
+      typeof yTrueOrOpts === "object" &&
+      !Array.isArray(yTrueOrOpts)
     ) {
       const { X, y, data, omit_missing = true } = yTrueOrOpts;
       if (X && y && data) {
@@ -272,7 +363,8 @@ export class Classifier extends Estimator {
 
   _accuracy(yTrue, yPred) {
     if (
-      !Array.isArray(yTrue) || !Array.isArray(yPred) ||
+      !Array.isArray(yTrue) ||
+      !Array.isArray(yPred) ||
       yTrue.length !== yPred.length
     ) {
       throw new Error(

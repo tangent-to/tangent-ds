@@ -2,12 +2,19 @@
  * Decision Tree estimators (classification & regression) using CART-style splits.
  */
 
-import { Classifier, Regressor } from '../../core/estimators/estimator.js';
-import { prepareXY, prepareX } from '../../core/table.js';
-import { gini, entropy, variance, mse, mae, getCriterionFunction } from '../criteria.js';
+import { Classifier, Regressor } from "../../core/estimators/estimator.js";
+import { prepareXY, prepareX } from "../../core/table.js";
+import {
+  gini,
+  entropy,
+  variance,
+  mse,
+  mae,
+  getCriterionFunction,
+} from "../criteria.js";
 
 function toNumericMatrix(X) {
-  return X.map((row) => Array.isArray(row) ? row.map(Number) : [Number(row)]);
+  return X.map((row) => (Array.isArray(row) ? row.map(Number) : [Number(row)]));
 }
 
 function toArray(y) {
@@ -39,7 +46,7 @@ function meanValue(values) {
 function buildPreparedData(X, y) {
   if (
     X &&
-    typeof X === 'object' &&
+    typeof X === "object" &&
     !Array.isArray(X) &&
     (X.data || X.X || X.columns)
   ) {
@@ -47,33 +54,48 @@ function buildPreparedData(X, y) {
       X: X.X || X.columns,
       y: X.y,
       data: X.data,
+<<<<<<< Updated upstream
       omit_missing: X.omit_missing !== undefined ? X.omit_missing : true
+=======
+      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
+      encoders: X.encoders, // Pass encoders for label encoding
+>>>>>>> Stashed changes
     });
     return {
       X: toNumericMatrix(prepared.X),
       y: prepared.y,
+<<<<<<< Updated upstream
       columns: prepared.columnsX
+=======
+      columns: prepared.columnsX,
+      encoders: prepared.encoders, // Return encoders
+>>>>>>> Stashed changes
     };
   }
 
   return {
     X: toNumericMatrix(X),
     y: toArray(y),
+<<<<<<< Updated upstream
     columns: null
+=======
+    columns: null,
+    encoders: null,
+>>>>>>> Stashed changes
   };
 }
 
 function preparePredictInput(X, storedColumns) {
   if (
     X &&
-    typeof X === 'object' &&
+    typeof X === "object" &&
     !Array.isArray(X) &&
     (X.data || X.X || X.columns)
   ) {
     const prepared = prepareX({
       columns: X.X || X.columns || storedColumns,
       data: X.data,
-      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true
+      omit_missing: X.omit_missing !== undefined ? X.omit_missing : true,
     });
     return toNumericMatrix(prepared.X);
   }
@@ -100,9 +122,9 @@ class DecisionTreeBase {
     minGain = 1e-7,
     maxLeafNodes = null,
     criterion = null,
-    task = 'classification',
+    task = "classification",
     maxFeatures = null,
-    random = Math.random
+    random = Math.random,
   } = {}) {
     this.maxDepth = maxDepth;
     this.minSamplesSplit = minSamplesSplit;
@@ -115,7 +137,7 @@ class DecisionTreeBase {
 
     // Set default criterion based on task
     if (criterion === null) {
-      this.criterion = task === 'classification' ? 'gini' : 'mse';
+      this.criterion = task === "classification" ? "gini" : "mse";
     } else {
       this.criterion = criterion;
     }
@@ -148,7 +170,9 @@ class DecisionTreeBase {
     // Normalize feature importances
     const totalImportance = this._featureImportances.reduce((a, b) => a + b, 0);
     if (totalImportance > 0) {
-      this._featureImportances = this._featureImportances.map(x => x / totalImportance);
+      this._featureImportances = this._featureImportances.map(
+        (x) => x / totalImportance,
+      );
     }
 
     this.fitted = true;
@@ -169,17 +193,29 @@ class DecisionTreeBase {
     }
 
     const subset = featureSubset(allFeatures, this.maxFeatures, this.random);
-    const { feature, threshold, gain, impurityDecrease } = this._bestSplit(X, y, subset);
+    const { feature, threshold, gain, impurityDecrease } = this._bestSplit(
+      X,
+      y,
+      subset,
+    );
 
     if (gain < this.minGain || feature === null) {
       this.nLeaves++;
       return this._createLeaf(y);
     }
 
-    const { leftX, leftY, rightX, rightY } = this._splitDataset(X, y, feature, threshold);
+    const { leftX, leftY, rightX, rightY } = this._splitDataset(
+      X,
+      y,
+      feature,
+      threshold,
+    );
 
     // Check min_samples_leaf constraint
-    if (leftX.length < this.minSamplesLeaf || rightX.length < this.minSamplesLeaf) {
+    if (
+      leftX.length < this.minSamplesLeaf ||
+      rightX.length < this.minSamplesLeaf
+    ) {
       this.nLeaves++;
       return this._createLeaf(y);
     }
@@ -194,13 +230,19 @@ class DecisionTreeBase {
     this._featureImportances[feature] += sampleWeight * impurityDecrease;
 
     return {
-      type: 'internal',
+      type: "internal",
       feature,
       threshold,
       impurity: this.criterionFn(y),
       nSamples: X.length,
       left: this._buildTree(leftX, leftY, depth + 1, allFeatures, totalSamples),
-      right: this._buildTree(rightX, rightY, depth + 1, allFeatures, totalSamples)
+      right: this._buildTree(
+        rightX,
+        rightY,
+        depth + 1,
+        allFeatures,
+        totalSamples,
+      ),
     };
   }
 
@@ -245,10 +287,9 @@ class DecisionTreeBase {
         const leftImpurity = this.criterionFn(leftY);
         const rightImpurity = this.criterionFn(rightY);
 
-        const weightedImpurity = (
+        const weightedImpurity =
           (leftY.length / y.length) * leftImpurity +
-          (rightY.length / y.length) * rightImpurity
-        );
+          (rightY.length / y.length) * rightImpurity;
 
         const gain = parentImpurity - weightedImpurity;
         const impurityDecrease = (y.length / this.trainY.length) * gain;
@@ -266,12 +307,12 @@ class DecisionTreeBase {
       feature: bestFeature,
       threshold: bestThreshold,
       gain: bestGain,
-      impurityDecrease: bestImpurityDecrease
+      impurityDecrease: bestImpurityDecrease,
     };
   }
 
   _createLeaf(y) {
-    if (this.task === 'classification') {
+    if (this.task === "classification") {
       const counts = new Map();
       y.forEach((label) => counts.set(label, (counts.get(label) || 0) + 1));
       const total = y.length;
@@ -280,31 +321,31 @@ class DecisionTreeBase {
         distribution[label] = count / total;
       });
       return {
-        type: 'leaf',
+        type: "leaf",
         value: majorityVote(y),
         distribution,
         impurity: this.criterionFn(y),
-        nSamples: y.length
+        nSamples: y.length,
       };
     }
     return {
-      type: 'leaf',
+      type: "leaf",
       value: meanValue(y),
       impurity: this.criterionFn(y),
-      nSamples: y.length
+      nSamples: y.length,
     };
   }
 
   predict(X) {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
     const data = preparePredictInput(X, this.columns);
     return data.map((row) => this._predictRow(row, this.root));
   }
 
   _predictRow(row, node) {
-    if (node.type === 'leaf') {
+    if (node.type === "leaf") {
       return node.value;
     }
     if (row[node.feature] <= node.threshold) {
@@ -320,14 +361,14 @@ class DecisionTreeBase {
    */
   apply(X) {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
     const data = preparePredictInput(X, this.columns);
     return data.map((row) => this._getLeafIndex(row, this.root, 0));
   }
 
   _getLeafIndex(row, node, idx) {
-    if (node.type === 'leaf') {
+    if (node.type === "leaf") {
       return idx;
     }
     if (row[node.feature] <= node.threshold) {
@@ -343,7 +384,7 @@ class DecisionTreeBase {
    */
   decisionPath(X) {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
     const data = preparePredictInput(X, this.columns);
     return data.map((row) => {
@@ -356,7 +397,7 @@ class DecisionTreeBase {
   _recordPath(row, node, path) {
     if (!node) return;
     path.push(node);
-    if (node.type === 'leaf') return;
+    if (node.type === "leaf") return;
 
     if (row[node.feature] <= node.threshold) {
       this._recordPath(row, node.left, path);
@@ -371,18 +412,18 @@ class DecisionTreeBase {
    */
   getDepth() {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
     return this._computeDepth(this.root);
   }
 
   _computeDepth(node) {
-    if (!node || node.type === 'leaf') {
+    if (!node || node.type === "leaf") {
       return 0;
     }
-    return 1 + Math.max(
-      this._computeDepth(node.left),
-      this._computeDepth(node.right)
+    return (
+      1 +
+      Math.max(this._computeDepth(node.left), this._computeDepth(node.right))
     );
   }
 
@@ -392,7 +433,7 @@ class DecisionTreeBase {
    */
   getNLeaves() {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
     return this.nLeaves;
   }
@@ -405,21 +446,24 @@ class DecisionTreeBase {
    */
   exportTree(featureNames = null, classNames = null) {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
 
-    const features = featureNames || Array.from({ length: this.nFeatures }, (_, i) => `X[${i}]`);
+    const features =
+      featureNames ||
+      Array.from({ length: this.nFeatures }, (_, i) => `X[${i}]`);
     let nodeId = 0;
-    let dot = 'digraph Tree {\nnode [shape=box, style="rounded", fontname="helvetica"];\n';
+    let dot =
+      'digraph Tree {\nnode [shape=box, style="rounded", fontname="helvetica"];\n';
 
-    const buildDot = (node, parentId = null, edge = '') => {
+    const buildDot = (node, parentId = null, edge = "") => {
       const currentId = nodeId++;
 
-      if (node.type === 'leaf') {
+      if (node.type === "leaf") {
         let label = `samples = ${node.nSamples}\\n`;
         label += `impurity = ${node.impurity.toFixed(4)}\\n`;
 
-        if (this.task === 'classification') {
+        if (this.task === "classification") {
           const className = classNames
             ? classNames[node.value]
             : `class ${node.value}`;
@@ -437,8 +481,8 @@ class DecisionTreeBase {
 
         dot += `${currentId} [label="${label}"];\n`;
 
-        buildDot(node.left, currentId, '<=');
-        buildDot(node.right, currentId, '>');
+        buildDot(node.left, currentId, "<=");
+        buildDot(node.right, currentId, ">");
       }
 
       if (parentId !== null) {
@@ -449,7 +493,7 @@ class DecisionTreeBase {
     };
 
     buildDot(this.root);
-    dot += '}';
+    dot += "}";
     return dot;
   }
 
@@ -460,17 +504,19 @@ class DecisionTreeBase {
    */
   exportText(featureNames = null) {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
 
-    const features = featureNames || Array.from({ length: this.nFeatures }, (_, i) => `X[${i}]`);
-    let text = '';
+    const features =
+      featureNames ||
+      Array.from({ length: this.nFeatures }, (_, i) => `X[${i}]`);
+    let text = "";
 
-    const buildText = (node, depth = 0, prefix = '') => {
-      const indent = '  '.repeat(depth);
+    const buildText = (node, depth = 0, prefix = "") => {
+      const indent = "  ".repeat(depth);
 
-      if (node.type === 'leaf') {
-        if (this.task === 'classification') {
+      if (node.type === "leaf") {
+        if (this.task === "classification") {
           text += `${indent}${prefix}class: ${node.value} (samples=${node.nSamples}, impurity=${node.impurity.toFixed(4)})\n`;
         } else {
           text += `${indent}${prefix}value: ${node.value.toFixed(4)} (samples=${node.nSamples}, impurity=${node.impurity.toFixed(4)})\n`;
@@ -478,8 +524,8 @@ class DecisionTreeBase {
       } else {
         const featureName = features[node.feature];
         text += `${indent}${prefix}${featureName} <= ${node.threshold.toFixed(4)} (samples=${node.nSamples}, impurity=${node.impurity.toFixed(4)})\n`;
-        buildText(node.left, depth + 1, '├─ ');
-        buildText(node.right, depth + 1, '└─ ');
+        buildText(node.left, depth + 1, "├─ ");
+        buildText(node.right, depth + 1, "└─ ");
       }
     };
 
@@ -493,7 +539,7 @@ class DecisionTreeBase {
    */
   get featureImportances() {
     if (!this.fitted) {
-      throw new Error('DecisionTree estimator not fitted.');
+      throw new Error("DecisionTree estimator not fitted.");
     }
     return this._featureImportances;
   }
@@ -502,11 +548,29 @@ class DecisionTreeBase {
 export class DecisionTreeClassifier extends Classifier {
   constructor(opts = {}) {
     super(opts);
-    this.tree = new DecisionTreeBase({ ...opts, task: 'classification' });
+    this.tree = new DecisionTreeBase({ ...opts, task: "classification" });
   }
 
   fit(X, y = null) {
+<<<<<<< Updated upstream
     this.tree.fit(X, y);
+=======
+    const prepared = buildPreparedData(X, y);
+
+    // Use centralized label encoder extraction
+    this._extractLabelEncoder(prepared);
+
+    // Use centralized class extraction to handle encoded labels
+    const { numericY, classes } = this._getClasses(prepared.y, false);
+
+    // Store classes on both this instance and the tree
+    this.classes_ = classes;
+    this.tree.classes_ = classes;
+
+    // Fit tree with numeric labels using prepared data
+    this.tree._fitPrepared(prepared.X, numericY, prepared.columns);
+
+>>>>>>> Stashed changes
     this.fitted = true;
     return this;
   }
@@ -517,12 +581,12 @@ export class DecisionTreeClassifier extends Classifier {
 
   predictProba(X) {
     if (!this.fitted) {
-      throw new Error('DecisionTree: estimator not fitted.');
+      throw new Error("DecisionTree: estimator not fitted.");
     }
     const data = preparePredictInput(X, this.tree.columns);
     return data.map((row) => {
       let node = this.tree.root;
-      while (node.type !== 'leaf') {
+      while (node.type !== "leaf") {
         if (row[node.feature] <= node.threshold) {
           node = node.left;
         } else {
@@ -572,7 +636,7 @@ export class DecisionTreeClassifier extends Classifier {
 export class DecisionTreeRegressor extends Regressor {
   constructor(opts = {}) {
     super(opts);
-    this.tree = new DecisionTreeBase({ ...opts, task: 'regression' });
+    this.tree = new DecisionTreeBase({ ...opts, task: "regression" });
   }
 
   fit(X, y = null) {
@@ -623,5 +687,5 @@ export class DecisionTreeRegressor extends Regressor {
 
 export default {
   DecisionTreeClassifier,
-  DecisionTreeRegressor
+  DecisionTreeRegressor,
 };
