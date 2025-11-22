@@ -30,6 +30,10 @@ export class GLM extends Estimator {
    * @param {string|number} params.dispersion - Dispersion estimation: 'estimate', 'fixed', or numeric
    * @param {number} params.theta - Theta parameter for negative binomial (default: 1)
    * @param {number} params.alpha - Significance level for confidence intervals (default: 0.05 for 95% CIs)
+   * @param {boolean} params.compress - Compress model to save memory (default: false)
+   * @param {boolean} params.keepFittedValues - Keep fitted values and residuals (default: true)
+   * @param {boolean} params.warnOnNoConvergence - Warn if model doesn't converge (default: true)
+   * @param {boolean} params.warnLargeDataset - Warn about large datasets in browser (default: true)
    */
   constructor(params = {}) {
     super(params);
@@ -47,6 +51,10 @@ export class GLM extends Estimator {
       dispersion: 'estimate',
       theta: 1,
       alpha: 0.05, // Default 95% confidence intervals
+      compress: false, // Memory optimization
+      keepFittedValues: true, // Keep fitted values and residuals
+      warnOnNoConvergence: true,
+      warnLargeDataset: true,
       ...params,
     };
 
@@ -176,6 +184,7 @@ export class GLM extends Estimator {
       this._model = fitGLM(X, y, options);
     }
 
+    this._postFitProcessing();
     this.fitted = true;
     return this;
   }
@@ -224,6 +233,7 @@ export class GLM extends Estimator {
       this._model = fitGLM(result.X, result.y, fitOptions);
     }
 
+    this._postFitProcessing();
     this.fitted = true;
     return this;
   }
@@ -522,6 +532,13 @@ export class GLM extends Estimator {
     this._columnsX = prepared.columnsX;
     this._columnY = opts.y;
 
+    // Check dataset size and warn if needed
+    this._checkDatasetSize(X, y, {
+      warnLargeDataset: this.params.warnLargeDataset,
+      largeSampleThreshold: 10000,
+      largeFeatureThreshold: this.params.family === 'binomial' ? 50 : 100
+    });
+
     // Extract groups for random effects
     let randomEffectsData;
     if (opts.groups) {
@@ -565,8 +582,90 @@ export class GLM extends Estimator {
       this._model = fitGLM(X, y, options);
     }
 
+    this._postFitProcessing();
     this.fitted = true;
     return this;
+  }
+
+  /**
+   * Post-fit processing: warnings and memory optimization
+   * @private
+   */
+  _postFitProcessing() {
+    if (!this._model) return;
+
+    // Check convergence and add warning if needed
+    if (!this._model.converged && this.params.warnOnNoConvergence) {
+      const modelType = this._isMixed ? 'GLMM' : 'GLM';
+      const message =
+        `⚠️ ${modelType} did not converge after ${this._model.iterations} iterations.\n` +
+        `Possible causes:\n` +
+        `  • Ill-conditioned data (check for perfect separation or multicollinearity)\n` +
+        `  • maxIter too low (current: ${this.params.maxIter})\n` +
+        `  • Tolerance too strict (current: ${this.params.tol})\n` +
+        `Recommendations:\n` +
+        `  • Increase maxIter or adjust tol\n` +
+        `  • Check model.summary() for coefficient estimates\n` +
+        `  • Consider regularization`;
+
+      console.warn(message);
+      this._addWarning('convergence', message, {
+        iterations: this._model.iterations,
+        maxIter: this.params.maxIter,
+        tol: this.params.tol
+      });
+    }
+
+    // Apply memory optimizations if requested
+    if (this.params.compress) {
+      this._compressModel();
+    }
+
+    if (!this.params.keepFittedValues) {
+      delete this._model.fitted;
+      delete this._model.residuals;
+      delete this._model.pearsonResiduals;
+      delete this._model.devianceResiduals;
+    }
+  }
+
+  /**
+   * Compress model to reduce memory footprint
+   * @private
+   */
+  _compressModel() {
+    if (!this._model) return;
+
+    const roundTo = 1e10; // 10 decimal places
+
+    // Round coefficients
+    if (this._model.coefficients) {
+      this._model.coefficients = this._model.coefficients.map(c =>
+        Math.round(c * roundTo) / roundTo
+      );
+    }
+
+    // Round fixed effects (for GLMM)
+    if (this._model.fixedEffects) {
+      this._model.fixedEffects = this._model.fixedEffects.map(c =>
+        Math.round(c * roundTo) / roundTo
+      );
+    }
+
+    // Round standard errors
+    if (this._model.standardErrors) {
+      this._model.standardErrors = this._model.standardErrors.map(se =>
+        Math.round(se * roundTo) / roundTo
+      );
+    }
+
+    // Round confidence intervals
+    if (this._model.confidenceIntervals) {
+      this._model.confidenceIntervals = this._model.confidenceIntervals.map(ci => ({
+        lower: Math.round(ci.lower * roundTo) / roundTo,
+        upper: Math.round(ci.upper * roundTo) / roundTo
+      }));
+    }
   }
 
   /**
@@ -828,9 +927,7 @@ export class GLM extends Estimator {
    * @returns {Array} Predictions
    */
   predict(X, options = {}) {
-    if (!this.fitted) {
-      throw new Error('Model has not been fitted yet. Call fit() first.');
-    }
+    this._ensureFitted('predict');
 
     // Handle multiclass predictions
     if (this._isMulticlass) {
@@ -904,9 +1001,7 @@ export class GLM extends Estimator {
    * @param {number} options.alpha - Significance level for CIs (default: from constructor)
    */
   summary(options = {}) {
-    if (!this.fitted) {
-      throw new Error('Model has not been fitted yet. Call fit() first.');
-    }
+    this._ensureFitted('summary');
 
     const alpha = options.alpha !== undefined ? options.alpha : this.params.alpha;
 
@@ -927,9 +1022,7 @@ export class GLM extends Estimator {
    * @returns {Array<Object>} Array of {lower, upper} for each coefficient
    */
   confint(alpha = null) {
-    if (!this.fitted) {
-      throw new Error('Model has not been fitted yet. Call fit() first.');
-    }
+    this._ensureFitted('confint');
 
     const a = alpha !== null ? alpha : this.params.alpha;
     const z = this._getZCritical(a);
@@ -952,9 +1045,7 @@ export class GLM extends Estimator {
    * @returns {Array<number>} P-values for each coefficient
    */
   pvalues() {
-    if (!this.fitted) {
-      throw new Error('Model has not been fitted yet. Call fit() first.');
-    }
+    this._ensureFitted('pvalues');
 
     const coeffs = this._isMixed ? this._model.fixedEffects : this._model.coefficients;
     const ses = this._model.standardErrors;
@@ -1273,6 +1364,20 @@ export class GLM extends Estimator {
     const link = m.link;
 
     let html = '<div style="font-family: monospace; white-space: pre;">';
+
+    // Show warnings if any
+    if (this.hasWarnings()) {
+      const warnings = this.getWarnings();
+      html += '<div style="padding: 0.75em; margin-bottom: 1em; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;">';
+      html += `<strong style="color: #856404;">⚠️ ${warnings.length} Warning${warnings.length > 1 ? 's' : ''}</strong>`;
+      html += '<ul style="margin: 0.5em 0; padding-left: 1.5em;">';
+      warnings.forEach(w => {
+        const firstLine = w.message.split('\n')[0];
+        html += `<li><strong>${w.type}:</strong> ${firstLine}</li>`;
+      });
+      html += '</ul></div>';
+    }
+
     html += '<h3>Generalized Linear Model</h3>';
     html += `<p><strong>Family:</strong> ${family}, <strong>Link:</strong> ${link}</p>`;
 
@@ -1414,6 +1519,20 @@ export class GLM extends Estimator {
     const link = m.link;
 
     let html = '<div style="font-family: monospace; white-space: pre;">';
+
+    // Show warnings if any
+    if (this.hasWarnings()) {
+      const warnings = this.getWarnings();
+      html += '<div style="padding: 0.75em; margin-bottom: 1em; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;">';
+      html += `<strong style="color: #856404;">⚠️ ${warnings.length} Warning${warnings.length > 1 ? 's' : ''}</strong>`;
+      html += '<ul style="margin: 0.5em 0; padding-left: 1.5em;">';
+      warnings.forEach(w => {
+        const firstLine = w.message.split('\n')[0];
+        html += `<li><strong>${w.type}:</strong> ${firstLine}</li>`;
+      });
+      html += '</ul></div>';
+    }
+
     html += '<h3>Generalized Linear Mixed Model</h3>';
     html += `<p><strong>Family:</strong> ${family}, <strong>Link:</strong> ${link}</p>`;
 

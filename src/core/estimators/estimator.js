@@ -25,6 +25,256 @@ export class Estimator {
     this.fitted = false;
     // place to store internal learned attributes (e.g. coefficients)
     this._state = {};
+    // track warnings during fitting
+    this._warnings = [];
+  }
+
+  /**
+   * Check if model is fitted
+   * @returns {boolean}
+   */
+  isFitted() {
+    return !!this.fitted;
+  }
+
+  /**
+   * Ensure model is fitted before executing method
+   * Throws informative error with Observable-specific guidance
+   *
+   * @param {string} methodName - Name of the method being called
+   * @throws {Error} If model is not fitted
+   * @private
+   */
+  _ensureFitted(methodName) {
+    if (!this.fitted) {
+      const className = this.constructor.name;
+      throw new Error(
+        `${className}.${methodName}() requires a fitted model.\n\n` +
+        `Please call ${className}.fit() first before using ${methodName}().\n\n` +
+        `💡 Observable Tip: Ensure the cell calling fit() executes before ` +
+        `cells that use ${methodName}(). You can check fitted state with ` +
+        `model.isFitted() to avoid this error in reactive cells.`
+      );
+    }
+  }
+
+  /**
+   * Get comprehensive model state
+   * @returns {Object} State information including fitted status, memory estimate, warnings
+   */
+  getState() {
+    return {
+      fitted: this.fitted,
+      className: this.constructor.name,
+      params: this.getParams(),
+      memoryEstimate: this._estimateMemoryUsage(),
+      warnings: this._warnings.length,
+      hasWarnings: this._warnings.length > 0
+    };
+  }
+
+  /**
+   * Estimate memory usage in MB
+   * @returns {number} Estimated memory in megabytes
+   * @private
+   */
+  _estimateMemoryUsage() {
+    if (!this.fitted) return 0;
+
+    try {
+      const json = this.toJSON();
+      const jsonStr = JSON.stringify(json);
+      return (jsonStr.length * 2) / (1024 * 1024);
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  /**
+   * Get memory usage in human-readable format
+   * @returns {string} Memory usage string (e.g., "2.3 MB" or "145 KB")
+   */
+  getMemoryUsage() {
+    const mb = this._estimateMemoryUsage();
+    if (mb < 0) return "Unknown";
+    if (mb < 0.1) return `${(mb * 1024).toFixed(1)} KB`;
+    return `${mb.toFixed(2)} MB`;
+  }
+
+  /**
+   * Add a warning to the model
+   * @param {string} type - Warning type (e.g., 'convergence', 'memory', 'performance')
+   * @param {string} message - Warning message
+   * @param {Object} metadata - Additional metadata
+   * @private
+   */
+  _addWarning(type, message, metadata = {}) {
+    this._warnings.push({
+      type,
+      message,
+      timestamp: new Date().toISOString(),
+      ...metadata
+    });
+  }
+
+  /**
+   * Get all warnings
+   * @returns {Array<Object>} Array of warning objects
+   */
+  getWarnings() {
+    return this._warnings.slice();
+  }
+
+  /**
+   * Check if model has warnings
+   * @returns {boolean}
+   */
+  hasWarnings() {
+    return this._warnings.length > 0;
+  }
+
+  /**
+   * Clear all warnings
+   */
+  clearWarnings() {
+    this._warnings = [];
+  }
+
+  /**
+   * Get warnings of a specific type
+   * @param {string} type - Warning type
+   * @returns {Array<Object>} Filtered warnings
+   */
+  getWarningsByType(type) {
+    return this._warnings.filter(w => w.type === type);
+  }
+
+  /**
+   * Check dataset size and warn if potentially problematic
+   * @param {Array} X - Design matrix
+   * @param {Array} y - Response vector
+   * @param {Object} options - Warning options
+   * @private
+   */
+  _checkDatasetSize(X, y, options = {}) {
+    const {
+      warnLargeDataset = true,
+      largeSampleThreshold = 10000,
+      largeFeatureThreshold = 100
+    } = options;
+
+    if (!warnLargeDataset) return;
+
+    const n = X.length;
+    const p = X[0]?.length || 0;
+    const isBrowser = typeof window !== 'undefined';
+
+    if (n > largeSampleThreshold && isBrowser) {
+      const message =
+        `⚠️ Large dataset: Fitting on ${n.toLocaleString()} samples may be slow in browser environments.\n` +
+        `Consider:\n` +
+        `  • Using a sample for interactive development\n` +
+        `  • Switching to Node.js for production fitting\n` +
+        `  • Using incremental/batch fitting if available`;
+
+      console.warn(message);
+      this._addWarning('performance', message, { n, p, environment: 'browser' });
+    }
+
+    if (p > largeFeatureThreshold) {
+      const message =
+        `⚠️ High dimensionality: ${p} features may cause performance or convergence issues.\n` +
+        `Consider:\n` +
+        `  • Feature selection or dimensionality reduction\n` +
+        `  • Regularization to prevent overfitting\n` +
+        `  • Checking for multicollinearity`;
+
+      console.warn(message);
+      this._addWarning('performance', message, { n, p });
+    }
+  }
+
+  /**
+   * Observable/Jupyter HTML representation
+   * @returns {string} HTML representation
+   */
+  _repr_html_() {
+    const className = this.constructor.name;
+
+    if (!this.fitted) {
+      return `
+        <div style="padding: 1em; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-family: sans-serif;">
+          <strong style="color: #856404;">⚠️ ${className} - Not Fitted</strong>
+          <p style="margin: 0.5em 0;">This model has not been fitted yet.</p>
+          <p style="margin: 0.5em 0; font-size: 0.9em;">
+            Call <code style="background: #f8f9fa; padding: 2px 6px; border-radius: 3px;">model.fit(X, y)</code> first.
+          </p>
+          <p style="margin: 0.5em 0; font-size: 0.85em; color: #666;">
+            <em>💡 Observable: Ensure the fit() cell executes before cells that use the model.</em>
+          </p>
+        </div>
+      `;
+    }
+
+    const state = this.getState();
+    let html = `
+      <div style="font-family: sans-serif; border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden;">
+        <div style="padding: 0.75em 1em; background: #f8f9fa; border-bottom: 1px solid #dee2e6;">
+          <strong>${className}</strong>
+          <span style="margin-left: 1em; font-size: 0.9em; color: #28a745;">✓ Fitted</span>
+          <span style="margin-left: 1em; font-size: 0.85em; color: #6c757d;">
+            Memory: ${this.getMemoryUsage()}
+          </span>
+        </div>
+    `;
+
+    if (this.hasWarnings()) {
+      const warnings = this.getWarnings();
+      html += `
+        <div style="padding: 0.75em 1em; background: #fff3cd; border-bottom: 1px solid #ffc107;">
+          <strong style="color: #856404;">⚠️ ${warnings.length} Warning${warnings.length > 1 ? 's' : ''}</strong>
+          <details style="margin-top: 0.5em;">
+            <summary style="cursor: pointer; font-size: 0.9em;">Show details</summary>
+            <ul style="margin: 0.5em 0; padding-left: 1.5em; font-size: 0.85em;">
+      `;
+
+      warnings.forEach(w => {
+        const firstLine = w.message.split('\n')[0];
+        html += `<li><strong>${w.type}:</strong> ${firstLine}</li>`;
+      });
+
+      html += `
+            </ul>
+          </details>
+        </div>
+      `;
+    }
+
+    html += `
+        <div style="padding: 0.75em 1em;">
+          <details>
+            <summary style="cursor: pointer; font-weight: 500;">Parameters</summary>
+            <pre style="margin: 0.5em 0; padding: 0.5em; background: #f8f9fa; border-radius: 3px; font-size: 0.85em; overflow-x: auto;">${JSON.stringify(this.params, null, 2)}</pre>
+          </details>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
+  /**
+   * Node.js inspect customization
+   */
+  [Symbol.for('nodejs.util.inspect.custom')]() {
+    const className = this.constructor.name;
+    if (!this.fitted) {
+      return `${className}(not fitted)`;
+    }
+
+    const state = this.getState();
+    const warnings = state.hasWarnings ? ` [${state.warnings} warnings]` : '';
+    return `${className}(fitted, ${this.getMemoryUsage()})${warnings}`;
   }
 
   /**
@@ -54,6 +304,7 @@ export class Estimator {
       params: this.getParams(),
       fitted: !!this.fitted,
       state: this._state || {},
+      warnings: this._warnings || []
     };
   }
 
@@ -67,6 +318,7 @@ export class Estimator {
     const inst = new this(obj.params || {});
     if (obj.state) inst._state = obj.state;
     inst.fitted = !!obj.fitted;
+    inst._warnings = obj.warnings || [];
     return inst;
   }
 
@@ -190,6 +442,15 @@ export class Regressor extends Estimator {
   }
 
   /**
+   * Predict - subclasses must override
+   * Ensures model is fitted before prediction
+   */
+  predict(X, options = {}) {
+    this._ensureFitted('predict');
+    throw new Error("predict() not implemented for this regressor");
+  }
+
+  /**
    * Default R^2 scoring implementation:
    *   1 - SS_res / SS_tot
    *
@@ -198,6 +459,8 @@ export class Regressor extends Estimator {
    *  - table-style: score({ X, y, data }) where predict will be called internally
    */
   score(yTrueOrOpts, yPred = null, opts = {}) {
+    this._ensureFitted('score');
+
     // If first argument is an options object assume we need to predict
     if (
       arguments.length === 1 &&
@@ -250,6 +513,24 @@ export class Classifier extends Estimator {
     super(params);
     this.labelEncoder_ = null;
     this.classes_ = null;
+  }
+
+  /**
+   * Predict - subclasses must override
+   * Ensures model is fitted before prediction
+   */
+  predict(X, options = {}) {
+    this._ensureFitted('predict');
+    throw new Error("predict() not implemented for this classifier");
+  }
+
+  /**
+   * Predict probabilities - subclasses should override
+   * Ensures model is fitted before prediction
+   */
+  predictProba(X) {
+    this._ensureFitted('predictProba');
+    throw new Error("predictProba() not implemented for this classifier");
   }
 
   /**
@@ -339,6 +620,8 @@ export class Classifier extends Estimator {
    *  - or score({ X, y, data }) which predicts internally
    */
   score(yTrueOrOpts, yPred = null, opts = {}) {
+    this._ensureFitted('score');
+
     if (
       arguments.length === 1 &&
       yTrueOrOpts &&
@@ -374,13 +657,6 @@ export class Classifier extends Estimator {
     }
     return correct / yTrue.length;
   }
-
-  /**
-   * Optionally implement predictProba in subclasses.
-   */
-  predictProba(/* X */) {
-    throw new Error("predictProba() not implemented for this classifier");
-  }
 }
 
 /**
@@ -389,6 +665,15 @@ export class Classifier extends Estimator {
 export class Transformer extends Estimator {
   constructor(params = {}) {
     super(params);
+  }
+
+  /**
+   * Transform - subclasses must override
+   * Ensures model is fitted before transformation
+   */
+  transform(X, options = {}) {
+    this._ensureFitted('transform');
+    throw new Error("transform() not implemented for this transformer");
   }
 
   /**
