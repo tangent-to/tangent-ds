@@ -571,9 +571,7 @@ export class DecisionTreeClassifier extends Classifier {
   }
 
   predictProba(X) {
-    if (!this.fitted) {
-      throw new Error("DecisionTree: estimator not fitted.");
-    }
+    this._ensureFitted('predict');
     const data = preparePredictInput(X, this.tree.columns);
     return data.map((row) => {
       let node = this.tree.root;

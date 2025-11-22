@@ -309,7 +309,7 @@ export class GAMRegressor extends Regressor {
   }
 
   predict(X) {
-    if (!this.fitted) throw new Error('GAMRegressor: estimator not fitted.');
+    this._ensureFitted('predict');
     const data = preparePredictInput(X, this.gam.columns);
     const design = this.gam._designMatrix(data);
     const designMatrix = new Matrix(design);
@@ -324,7 +324,7 @@ export class GAMRegressor extends Regressor {
    * @returns {Array<Object>} Array of { fitted, se, lower, upper } for each observation
    */
   predictWithInterval(X, level = 0.95) {
-    if (!this.fitted) throw new Error('GAMRegressor: estimator not fitted.');
+    this._ensureFitted('predict');
     const data = preparePredictInput(X, this.gam.columns);
     const design = this.gam._designMatrix(data);
     const designMatrix = new Matrix(design);
@@ -355,7 +355,7 @@ export class GAMRegressor extends Regressor {
   }
 
   summary() {
-    if (!this.fitted) {
+    this._ensureFitted('predictProba'); {
       throw new Error('GAMRegressor: estimator not fitted.');
     }
 
@@ -485,7 +485,7 @@ export class GAMClassifier extends Classifier {
   }
 
   predictProba(X) {
-    if (!this.fitted) throw new Error('GAMClassifier: estimator not fitted.');
+    this._ensureFitted('predict');
     const data = preparePredictInput(X, this.gam.columns);
     const eta = this._computeLinearPredictors(data);
     const K = this.gam.K;
@@ -533,7 +533,7 @@ export class GAMClassifier extends Classifier {
   }
 
   summary() {
-    if (!this.fitted) {
+    this._ensureFitted('predictProba'); {
       throw new Error('GAMClassifier: estimator not fitted.');
     }
 
