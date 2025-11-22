@@ -65,23 +65,17 @@ export class HCA extends Estimator {
   }
 
   cut(k) {
-    if (!this.fitted || !this.model) {
-      throw new Error('HCA: estimator not fitted.');
-    }
+    this._ensureFitted('cut');
     return hca.cut(this.model, k);
   }
 
   cutHeight(height) {
-    if (!this.fitted || !this.model) {
-      throw new Error('HCA: estimator not fitted.');
-    }
+    this._ensureFitted('cutHeight');
     return hca.cutHeight(this.model, height);
   }
 
   summary() {
-    if (!this.fitted || !this.model) {
-      throw new Error('HCA: estimator not fitted.');
-    }
+    this._ensureFitted('summary');
     const { linkage, n, dendrogram } = this.model;
     const summary = {
       linkage,

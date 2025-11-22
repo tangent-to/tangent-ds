@@ -67,9 +67,7 @@ export class PolynomialRegressor extends Regressor {
   }
 
   predict(X, { intercept = undefined } = {}) {
-    if (!this.fitted || !this.model) {
-      throw new Error('PolynomialRegressor: estimator not fitted.');
-    }
+    this._ensureFitted('predict');
 
     let matrix = X;
 
@@ -98,9 +96,7 @@ export class PolynomialRegressor extends Regressor {
   }
 
   summary() {
-    if (!this.fitted || !this.model) {
-      throw new Error('PolynomialRegressor: estimator not fitted.');
-    }
+    this._ensureFitted('summary');
     return { ...this.model };
   }
 

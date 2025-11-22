@@ -92,9 +92,7 @@ export class KMeans extends Estimator {
    *  - declarative: predict({ data: tableLike, columns: ['c1','c2'], omit_missing: true })
    */
   predict(X) {
-    if (!this.fitted || !this.model) {
-      throw new Error('KMeans: estimator is not fitted. Call fit() first.');
-    }
+    this._ensureFitted('predict');
 
     // If declarative object with data/columns provided, prepare numeric matrix
     if (X && typeof X === 'object' && !Array.isArray(X) && (X.data || X.columns)) {
@@ -140,9 +138,7 @@ export class KMeans extends Estimator {
    * Convenience: return summary stats for fitted model
    */
   summary() {
-    if (!this.fitted || !this.model) {
-      throw new Error('KMeans: estimator is not fitted.');
-    }
+    this._ensureFitted('summary');
     return {
       k: this.k,
       iterations: this.iterations,

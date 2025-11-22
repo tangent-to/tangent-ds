@@ -90,9 +90,7 @@ export class PCA extends Transformer {
    * Accepts numeric arrays or declarative table objects { data, columns }.
    */
   transform(X) {
-    if (!this.fitted || !this.model) {
-      throw new Error('PCA: estimator not fitted. Call fit() before transform().');
-    }
+    this._ensureFitted('transform');
 
     let matrix = X;
     if (
@@ -118,9 +116,7 @@ export class PCA extends Transformer {
    * Helper to expose functional cumulative variance.
    */
   cumulativeVariance() {
-    if (!this.fitted || !this.model) {
-      throw new Error('PCA: estimator not fitted. Call fit() before cumulativeVariance().');
-    }
+    this._ensureFitted('cumulativeVariance');
     return pcaFn.cumulativeVariance(this.model);
   }
 
@@ -128,9 +124,7 @@ export class PCA extends Transformer {
    * Provide lightweight summary of the fitted model.
    */
   summary() {
-    if (!this.fitted || !this.model) {
-      throw new Error('PCA: estimator not fitted. Call fit() before summary().');
-    }
+    this._ensureFitted('summary');
 
     const { eigenvalues, varianceExplained, means, sds } = this.model;
     return {
@@ -153,9 +147,7 @@ export class PCA extends Transformer {
    * @param {boolean} [scaled=true] - return scaled or raw coordinates
    */
   getScores(type = 'sites', scaled = true) {
-    if (!this.fitted || !this.model) {
-      throw new Error('PCA: estimator not fitted. Call fit() before getScores().');
-    }
+    this._ensureFitted('getScores');
 
     const modelType = type.toLowerCase();
     if (modelType === 'sites' || modelType === 'samples') {

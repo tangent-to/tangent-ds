@@ -439,9 +439,7 @@ class RandomForestBase {
    * Returns array of shape [n_samples, n_estimators].
    */
   apply(X) {
-    if (!this.fitted) {
-      throw new Error("RandomForest: estimator not fitted.");
-    }
+    this._ensureFitted('apply');
 
     const data = preparePredict(X, this.columns);
     const result = [];
@@ -473,9 +471,7 @@ class RandomForestBase {
    * Returns indicator matrix of shape [n_samples, n_nodes].
    */
   decisionPath(X) {
-    if (!this.fitted) {
-      throw new Error("RandomForest: estimator not fitted.");
-    }
+    this._ensureFitted('decisionPath');
 
     const data = preparePredict(X, this.columns);
     const paths = [];
@@ -506,16 +502,12 @@ class RandomForestBase {
   }
 
   get featureImportances() {
-    if (!this.fitted) {
-      throw new Error("RandomForest: estimator not fitted.");
-    }
+    this._ensureFitted('featureImportances');
     return this._featureImportances;
   }
 
   get oobScoreValue() {
-    if (!this.fitted) {
-      throw new Error("RandomForest: estimator not fitted.");
-    }
+    this._ensureFitted('oobScoreValue');
     if (!this.oobScore) {
       throw new Error(
         "RandomForest: oobScore=true must be set to compute OOB score.",
@@ -564,7 +556,7 @@ export class RandomForestClassifier extends Classifier {
   }
 
   predictProba(X) {
-    if (!this.fitted) throw new Error("RandomForest: estimator not fitted.");
+    this._ensureFitted('predictProba');
     const data = preparePredict(X, this.forest.columns);
     const proba = [];
     const labels = this.forest.classes;

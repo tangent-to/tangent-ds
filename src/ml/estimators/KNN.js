@@ -248,9 +248,7 @@ class KNNBase {
   }
 
   _preparePredict(X) {
-    if (!this.fitted) {
-      throw new Error('KNN estimator not fitted.');
-    }
+    this._ensureFitted('predict');
     return preparePredictInput(X, this.columns);
   }
 
