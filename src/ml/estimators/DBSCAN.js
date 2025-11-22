@@ -126,9 +126,7 @@ export class DBSCAN extends Estimator {
    * Get core sample mask (boolean array indicating which samples are core points)
    */
   get coreSampleMask() {
-    if (!this.fitted) {
-      throw new Error('DBSCAN: estimator is not fitted.');
-    }
+    this._ensureFitted('coreSampleMask');
     const mask = new Array(this.labels.length).fill(false);
     for (const idx of this.coreSampleIndices) {
       mask[idx] = true;
@@ -140,9 +138,7 @@ export class DBSCAN extends Estimator {
    * Get components (core samples) - returns array of core sample data points
    */
   get components() {
-    if (!this.fitted) {
-      throw new Error('DBSCAN: estimator is not fitted.');
-    }
+    this._ensureFitted('components');
     return this.coreSampleIndices.map(idx => this.X_train[idx]);
   }
 

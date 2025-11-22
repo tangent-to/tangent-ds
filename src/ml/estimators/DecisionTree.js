@@ -330,9 +330,7 @@ class DecisionTreeBase {
   }
 
   predict(X) {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('predict');
     const data = preparePredictInput(X, this.columns);
     return data.map((row) => this._predictRow(row, this.root));
   }
@@ -353,9 +351,7 @@ class DecisionTreeBase {
    * @returns {Array<number>} Leaf indices for each sample
    */
   apply(X) {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('apply');
     const data = preparePredictInput(X, this.columns);
     return data.map((row) => this._getLeafIndex(row, this.root, 0));
   }
@@ -376,9 +372,7 @@ class DecisionTreeBase {
    * @returns {Array<Array>} Decision path for each sample
    */
   decisionPath(X) {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('decisionPath');
     const data = preparePredictInput(X, this.columns);
     return data.map((row) => {
       const path = [];
@@ -404,9 +398,7 @@ class DecisionTreeBase {
    * @returns {number} Maximum depth
    */
   getDepth() {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('getDepth');
     return this._computeDepth(this.root);
   }
 
@@ -425,9 +417,7 @@ class DecisionTreeBase {
    * @returns {number} Number of leaves
    */
   getNLeaves() {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('getNLeaves');
     return this.nLeaves;
   }
 
@@ -438,9 +428,7 @@ class DecisionTreeBase {
    * @returns {string} DOT format string
    */
   exportTree(featureNames = null, classNames = null) {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('exportTree');
 
     const features =
       featureNames ||
@@ -496,9 +484,7 @@ class DecisionTreeBase {
    * @returns {string} ASCII representation
    */
   exportText(featureNames = null) {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('exportText');
 
     const features =
       featureNames ||
@@ -531,9 +517,7 @@ class DecisionTreeBase {
    * @returns {Array<number>} Feature importance scores
    */
   get featureImportances() {
-    if (!this.fitted) {
-      throw new Error("DecisionTree estimator not fitted.");
-    }
+    this._ensureFitted('featureImportances');
     return this._featureImportances;
   }
 }

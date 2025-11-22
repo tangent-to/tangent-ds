@@ -2,6 +2,7 @@
  * Pipeline utilities for chaining preprocessing and models
  */
 
+import { Estimator } from '../core/estimators/estimator.js';
 import { prepareXY } from '../core/table.js';
 
 function isTableDescriptor(input) {
@@ -16,18 +17,18 @@ function isTableDescriptor(input) {
 /**
  * Pipeline class for chaining transformers and estimators
  */
-export class Pipeline {
+export class Pipeline extends Estimator {
   /**
    * Create a pipeline
    * @param {Array<Object>} steps - Array of transformers/estimators
    */
   constructor(steps) {
+    super({ steps });
     if (!Array.isArray(steps) || steps.length === 0) {
       throw new Error('Pipeline requires at least one step');
     }
 
     this.steps = steps;
-    this.fitted = false;
   }
 
   /**
@@ -70,9 +71,7 @@ export class Pipeline {
    * @returns {Array} Transformed data
    */
   transform(X) {
-    if (!this.fitted) {
-      throw new Error('Pipeline not fitted. Call fit() first.');
-    }
+    this._ensureFitted('transform');
 
     let XTransformed = X;
 
@@ -102,9 +101,7 @@ export class Pipeline {
    * @returns {Array} Predictions
    */
   predict(X) {
-    if (!this.fitted) {
-      throw new Error('Pipeline not fitted. Call fit() first.');
-    }
+    this._ensureFitted('predict');
 
     let XTransformed = X;
 
@@ -137,7 +134,7 @@ export class Pipeline {
 /**
  * Simple GridSearchCV for hyperparameter tuning
  */
-export class GridSearchCV {
+export class GridSearchCV extends Estimator {
   /**
    * Create grid search
    * @param {Function} estimatorFn - Function that creates estimator: (params) => estimator
@@ -146,6 +143,7 @@ export class GridSearchCV {
    * @param {number} cv - Number of cross-validation folds
    */
   constructor(estimatorFn, paramGrid, scoreFn, cv = 5) {
+    super({ cv });
     this.estimatorFn = estimatorFn;
     this.paramGrid = paramGrid;
     this.scoreFn = scoreFn;
@@ -254,6 +252,7 @@ export class GridSearchCV {
     this.bestEstimator = this.estimatorFn(this.bestParams);
     this.bestEstimator.fit(dataX, dataY);
 
+    this.fitted = true;
     return this;
   }
 
@@ -263,10 +262,7 @@ export class GridSearchCV {
    * @returns {Array} Predictions
    */
   predict(X) {
-    if (this.bestEstimator === null) {
-      throw new Error('GridSearchCV not fitted. Call fit() first.');
-    }
-
+    this._ensureFitted('predict');
     return this.bestEstimator.predict(X);
   }
 

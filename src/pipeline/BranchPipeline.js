@@ -13,7 +13,9 @@
  *   const labels = pipeline.predict(X);
  */
 
-export class BranchPipeline {
+import { Estimator } from '../core/estimators/estimator.js';
+
+export class BranchPipeline extends Estimator {
   /**
    * @param {Object} options
    * @param {Object<string, Object>} options.branches - Named branches (estimators or pipelines)
@@ -21,10 +23,10 @@ export class BranchPipeline {
    * @param {Array<number>} options.weights - Optional weights for each branch (for weighted voting)
    */
   constructor({ branches = {}, combiner = 'vote', weights = null } = {}) {
+    super({ combiner, weights });
     this.branches = branches;
     this.combiner = combiner;
     this.weights = weights;
-    this.fitted = false;
     this.branchNames = Object.keys(branches);
 
     // Validate weights
@@ -58,9 +60,7 @@ export class BranchPipeline {
    * @returns {Array} Combined predictions
    */
   predict(X) {
-    if (!this.fitted) {
-      throw new Error('BranchPipeline must be fitted before predict');
-    }
+    this._ensureFitted('predict');
 
     // Get predictions from each branch
     const branchPredictions = [];
@@ -86,9 +86,7 @@ export class BranchPipeline {
    * @returns {Object<string, Array>} Predictions keyed by branch name
    */
   predictAll(X) {
-    if (!this.fitted) {
-      throw new Error('BranchPipeline must be fitted before predictAll');
-    }
+    this._ensureFitted('predictAll');
 
     const allPredictions = {};
     for (const [name, estimator] of Object.entries(this.branches)) {

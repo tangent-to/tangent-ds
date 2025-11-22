@@ -24,7 +24,9 @@
  *   console.log(consensus.labels);
  */
 
-export class ConsensusCluster {
+import { Estimator } from '../core/estimators/estimator.js';
+
+export class ConsensusCluster extends Estimator {
   /**
    * @param {Object} options
    * @param {Array<Object>} options.estimators - Array of clustering estimators
@@ -36,6 +38,7 @@ export class ConsensusCluster {
     threshold = 0.5,
     linkage = 'single'
   } = {}) {
+    super({ threshold, linkage });
     if (estimators.length === 0) {
       throw new Error('ConsensusCluster requires at least one estimator');
     }
@@ -43,7 +46,6 @@ export class ConsensusCluster {
     this.estimators = estimators;
     this.threshold = threshold;
     this.linkage = linkage;
-    this.fitted = false;
     this.coAssocMatrix = null;
     this.labels = null;
   }
@@ -177,9 +179,7 @@ export class ConsensusCluster {
    * @returns {Array<number>} Strength scores between 0 and 1
    */
   getConsensusStrength() {
-    if (!this.fitted) {
-      throw new Error('ConsensusCluster must be fitted first');
-    }
+    this._ensureFitted('getConsensusStrength');
 
     const n = this.labels.length;
     const strength = new Array(n);
@@ -214,9 +214,7 @@ export class ConsensusCluster {
    * @returns {Object} {cluster: avgStrength}
    */
   getClusterStrength() {
-    if (!this.fitted) {
-      throw new Error('ConsensusCluster must be fitted first');
-    }
+    this._ensureFitted('getClusterStrength');
 
     const strength = this.getConsensusStrength();
     const clusterStrengths = {};
@@ -281,9 +279,7 @@ export class ConsensusCluster {
    * Shows how each estimator contributed
    */
   getEstimatorAgreement() {
-    if (!this.fitted) {
-      throw new Error('ConsensusCluster must be fitted first');
-    }
+    this._ensureFitted('getEstimatorAgreement');
 
     const agreement = [];
 
