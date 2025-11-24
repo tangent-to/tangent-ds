@@ -1,0 +1,152 @@
+<!-- Custom footer for tangent/ds documentation -->
+<div class="ds-custom-footer">
+  <style>
+    .ds-custom-footer {
+      margin-top: 4rem;
+      padding: 3rem 0 2rem 0;
+      border-top: 2px solid #e1e4e8;
+      background: #f6f8fa;
+      margin-left: -1.5rem;
+      margin-right: -1.5rem;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+
+    .ds-footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .ds-footer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .ds-footer-section h4 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: #24292e;
+    }
+
+    .ds-footer-links {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .ds-footer-links li {
+      margin-bottom: 0.5rem;
+    }
+
+    .ds-footer-links a {
+      color: #586069;
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+
+    .ds-footer-links a:hover {
+      color: #667eea;
+    }
+
+    .ds-footer-bottom {
+      padding-top: 2rem;
+      border-top: 1px solid #e1e4e8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.85rem;
+      color: #586069;
+    }
+
+    .ds-footer-badges {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .ds-footer-badge {
+      padding: 0.25rem 0.6rem;
+      background: white;
+      border: 1px solid #e1e4e8;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #24292e;
+    }
+
+    @media (max-width: 768px) {
+      .ds-footer-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .ds-footer-bottom {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+
+  <div class="ds-footer-content">
+    <div class="ds-footer-grid">
+      <div class="ds-footer-section">
+        <h4>Documentation</h4>
+        <ul class="ds-footer-links">
+          <li><a href="{{ site.baseurl }}/getting-started">Getting Started</a></li>
+          <li><a href="{{ site.baseurl }}/api-reference">API Reference</a></li>
+          <li><a href="{{ site.baseurl }}/tutorials">Tutorials</a></li>
+          <li><a href="{{ site.baseurl }}/examples">Examples</a></li>
+        </ul>
+      </div>
+
+      <div class="ds-footer-section">
+        <h4>Topics</h4>
+        <ul class="ds-footer-links">
+          <li><a href="{{ site.baseurl }}/stats">Statistics</a></li>
+          <li><a href="{{ site.baseurl }}/ml">Machine Learning</a></li>
+          <li><a href="{{ site.baseurl }}/mva">Multivariate Analysis</a></li>
+          <li><a href="{{ site.baseurl }}/plot">Visualization</a></li>
+        </ul>
+      </div>
+
+      <div class="ds-footer-section">
+        <h4>Resources</h4>
+        <ul class="ds-footer-links">
+          <li><a href="https://github.com/{{ site.repository }}" target="_blank" rel="noopener">GitHub Repository</a></li>
+          <li><a href="https://github.com/{{ site.repository }}/issues" target="_blank" rel="noopener">Report an Issue</a></li>
+          <li><a href="https://github.com/{{ site.repository }}/discussions" target="_blank" rel="noopener">Discussions</a></li>
+          <li><a href="https://www.npmjs.com/package/@tangent/ds" target="_blank" rel="noopener">NPM Package</a></li>
+        </ul>
+      </div>
+
+      <div class="ds-footer-section">
+        <h4>Community</h4>
+        <ul class="ds-footer-links">
+          <li><a href="https://github.com/{{ site.repository }}/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing Guide</a></li>
+          <li><a href="https://github.com/{{ site.repository }}/blob/main/LICENSE" target="_blank" rel="noopener">License (GPL-3)</a></li>
+          <li><a href="https://github.com/{{ site.repository }}/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ds-footer-bottom">
+      <div>
+        <p style="margin: 0;">
+          © 2025 <a href="https://github.com/{{ site.repository }}" style="color: inherit;">{{ site.title }}</a>.
+          Licensed under <a href="https://github.com/{{ site.repository }}/blob/main/LICENSE" style="color: inherit;">GPL-3.0</a>.
+        </p>
+      </div>
+
+      <div class="ds-footer-badges">
+        <span class="ds-footer-badge">v{{ site.version | default: "0.3.0" }}</span>
+        <span class="ds-footer-badge">Browser + Node.js</span>
+        <span class="ds-footer-badge">ESM</span>
+      </div>
+    </div>
+  </div>
+</div>

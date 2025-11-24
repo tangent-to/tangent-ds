@@ -2,6 +2,7 @@
 title: "tangent/ds"
 tagline: "data science toolkit for JavaScript"
 description: "Statistical analysis and machine learning for JavaScript/TypeScript. Analyze data, build models, visualize results."
+version: "0.3.0"
 url: "https://tangent-to.github.io"
 baseurl: "/ds"
 
