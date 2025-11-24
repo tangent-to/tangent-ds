@@ -423,7 +423,7 @@ describe('GLM - Error Handling', () => {
   it('should throw error when predicting before fitting', () => {
     const model = new GLM({ family: 'gaussian' });
 
-    expect(() => model.predict([[1], [2]])).toThrow('Model has not been fitted');
+    expect(() => model.predict([[1], [2]])).toThrow('requires a fitted model');
   });
 
   it('should throw error for invalid family', () => {

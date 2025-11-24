@@ -355,9 +355,7 @@ export class GAMRegressor extends Regressor {
   }
 
   summary() {
-    this._ensureFitted('predictProba'); {
-      throw new Error('GAMRegressor: estimator not fitted.');
-    }
+    this._ensureFitted('summary');
 
     return createGAMSummary({
       coefficients: this.gam.coef,

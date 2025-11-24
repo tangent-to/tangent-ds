@@ -8,7 +8,7 @@
  * - Weighted predictions
  */
 
-import { Classifier, Regressor } from '../../core/estimators/estimator.js';
+import { Classifier, Regressor, Estimator } from '../../core/estimators/estimator.js';
 import { LabelEncoder, prepareX, prepareXY } from '../../core/table.js';
 import { mean } from '../../core/math.js';
 import { euclidean, manhattan, minkowski, chebyshev, cosine, getDistanceFunction } from '../distances.js';
@@ -195,7 +195,7 @@ function bruteForceRadiusNeighbors(trainX, point, radius, distFn) {
 
 // ============= KNN Base Class =============
 
-class KNNBase {
+class KNNBase extends Estimator {
   constructor({
     k = 5,
     weights = 'uniform',
@@ -203,6 +203,7 @@ class KNNBase {
     metric = 'euclidean',
     p = 2
   } = {}) {
+    super({ k, weights, algorithm, metric, p });
     if (k <= 0) throw new Error('k must be positive');
     this.k = k;
     this.weights = weights;

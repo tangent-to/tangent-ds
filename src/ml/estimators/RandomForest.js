@@ -2,7 +2,7 @@
  * Random Forest estimators built on top of Decision Trees.
  */
 
-import { Classifier, Regressor } from "../../core/estimators/estimator.js";
+import { Classifier, Regressor, Estimator } from "../../core/estimators/estimator.js";
 import { prepareXY, prepareX } from "../../core/table.js";
 import {
   DecisionTreeClassifier,
@@ -197,7 +197,7 @@ function weightedBootstrapSample(X, y, weights, random, maxSamples = null) {
   return { XSample, ySample, indices, oobIndices: Array.from(oobIndices) };
 }
 
-class RandomForestBase {
+class RandomForestBase extends Estimator {
   constructor({
     nEstimators = 50,
     maxDepth = 10,
@@ -211,6 +211,7 @@ class RandomForestBase {
     task = "classification",
     seed = null,
   } = {}) {
+    super({ nEstimators, maxDepth, minSamplesSplit, maxFeatures, minImpurityDecrease, maxSamples, classWeight, warmStart, oobScore, task, seed });
     this.nEstimators = nEstimators;
     this.maxDepth = maxDepth;
     this.minSamplesSplit = minSamplesSplit;

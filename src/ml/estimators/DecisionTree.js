@@ -2,7 +2,7 @@
  * Decision Tree estimators (classification & regression) using CART-style splits.
  */
 
-import { Classifier, Regressor } from "../../core/estimators/estimator.js";
+import { Classifier, Regressor, Estimator } from "../../core/estimators/estimator.js";
 import { prepareXY, prepareX } from "../../core/table.js";
 import {
   gini,
@@ -102,7 +102,7 @@ function featureSubset(allFeatures, maxFeatures, random) {
   return features.slice(0, maxFeatures);
 }
 
-class DecisionTreeBase {
+class DecisionTreeBase extends Estimator {
   constructor({
     maxDepth = 10,
     minSamplesSplit = 2,
@@ -114,6 +114,7 @@ class DecisionTreeBase {
     maxFeatures = null,
     random = Math.random,
   } = {}) {
+    super({ maxDepth, minSamplesSplit, minSamplesLeaf, minGain, maxLeafNodes, criterion, task, maxFeatures });
     this.maxDepth = maxDepth;
     this.minSamplesSplit = minSamplesSplit;
     this.minSamplesLeaf = minSamplesLeaf;
