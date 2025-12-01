@@ -59,6 +59,10 @@ import {
 import { GAMClassifier, GAMRegressor } from "./estimators/GAM.js";
 import { PolynomialRegressor } from "./estimators/PolynomialRegressor.js";
 import { MLPRegressor } from "./estimators/MLPRegressor.js";
+import { GaussianProcessRegressor } from "./estimators/GaussianProcessRegressor.js";
+
+// Kernels for Gaussian Processes
+import { Kernel, RBF, Periodic, RationalQuadratic } from "./kernels/index.js";
 
 export {
   // Clustering algorithms
@@ -70,6 +74,12 @@ export {
   DecisionTreeRegressor,
   GAMClassifier,
   GAMRegressor,
+  // Gaussian Process
+  GaussianProcessRegressor,
+  Kernel,
+  RBF,
+  Periodic,
+  RationalQuadratic,
   GridSearchCV,
   HCA,
   hca,
