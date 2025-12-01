@@ -1,34 +1,46 @@
 /**
  * Comparison tests with Python implementations
  * Verifies numerical correctness after safeguards implementation
+ * 
+ * These tests require Python 3 with sklearn and scipy installed.
+ * They will be skipped if Python dependencies are not available.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { PCA } from '../src/mva/estimators/PCA.js';
 import { KMeans } from '../src/ml/estimators/KMeans.js';
 import { GLM } from '../src/stats/estimators/GLM.js';
 
 let pythonResults;
+let pythonAvailable = false;
 
 beforeAll(() => {
-  // Run Python comparison script to generate reference results
+  // Check if Python and required packages are available
   try {
+    // First check if python3 is available
+    execSync('python3 --version', { stdio: 'pipe' });
+    
+    // Check if required packages are installed
+    execSync('python3 -c "import sklearn; import scipy; import numpy"', { stdio: 'pipe' });
+    
     console.log('Running Python comparison script...');
     execSync('python3 tests/compare_with_python.py', { stdio: 'inherit' });
     pythonResults = JSON.parse(
       readFileSync('/tmp/python_comparison_results.json', 'utf-8')
     );
     console.log('✓ Python reference results loaded');
+    pythonAvailable = true;
   } catch (error) {
-    console.error('Failed to run Python comparison:', error);
-    throw error;
+    console.warn('⚠ Python comparison tests skipped: Python 3 with sklearn/scipy not available');
+    console.warn('  Install with: pip3 install scikit-learn scipy numpy');
+    pythonAvailable = false;
   }
 });
 
 describe('PCA - Comparison with sklearn', () => {
-  it('should produce similar explained variance ratios', () => {
+  it.skipIf(!pythonAvailable)('should produce similar explained variance ratios', () => {
     const data = pythonResults.pca.data;
     const pca = new PCA({ n_components: 2 });
     pca.fit({ data });
@@ -53,7 +65,7 @@ describe('PCA - Comparison with sklearn', () => {
     expect(jsTotal).toBeCloseTo(pyTotal, 3);
   });
 
-  it('should produce similar component loadings', () => {
+  it.skipIf(!pythonAvailable)('should produce similar component loadings', () => {
     const data = pythonResults.pca.data;
     const pca = new PCA({ n_components: 2 });
     pca.fit({ data });
@@ -72,7 +84,7 @@ describe('PCA - Comparison with sklearn', () => {
 });
 
 describe('KMeans - Comparison with sklearn', () => {
-  it('should produce similar clustering results', () => {
+  it.skipIf(!pythonAvailable)('should produce similar clustering results', () => {
     const data = pythonResults.kmeans.data;
     const kmeans = new KMeans({ k: 3, seed: 42, maxIter: 100 });
     kmeans.fit({ data });
@@ -88,7 +100,7 @@ describe('KMeans - Comparison with sklearn', () => {
     expect(relativeError).toBeLessThan(0.15);
   });
 
-  it('should find correct number of clusters', () => {
+  it.skipIf(!pythonAvailable)('should find correct number of clusters', () => {
     const data = pythonResults.kmeans.data;
     const kmeans = new KMeans({ k: 3, seed: 42, maxIter: 100 });
     kmeans.fit({ data });
@@ -101,7 +113,7 @@ describe('KMeans - Comparison with sklearn', () => {
 });
 
 describe('GLM Logistic Regression - Comparison with sklearn', () => {
-  it('should produce similar coefficients for binary classification', () => {
+  it.skipIf(!pythonAvailable)('should produce similar coefficients for binary classification', () => {
     const X = pythonResults.logistic.X;
     const y = pythonResults.logistic.y;
 
@@ -123,7 +135,7 @@ describe('GLM Logistic Regression - Comparison with sklearn', () => {
     }
   });
 
-  it('should achieve similar prediction accuracy', () => {
+  it.skipIf(!pythonAvailable)('should achieve similar prediction accuracy', () => {
     const X = pythonResults.logistic.X;
     const y = pythonResults.logistic.y;
 
@@ -143,7 +155,7 @@ describe('GLM Logistic Regression - Comparison with sklearn', () => {
 });
 
 describe('GLM Linear Regression - Comparison with scipy', () => {
-  it('should produce similar coefficients for linear regression', () => {
+  it.skipIf(!pythonAvailable)('should produce similar coefficients for linear regression', () => {
     const X = pythonResults.linear.X;
     const y = pythonResults.linear.y;
 
@@ -165,7 +177,7 @@ describe('GLM Linear Regression - Comparison with scipy', () => {
     }
   });
 
-  it('should produce similar R² values', () => {
+  it.skipIf(!pythonAvailable)('should produce similar R² values', () => {
     const X = pythonResults.linear.X;
     const y = pythonResults.linear.y;
 
