@@ -13,28 +13,33 @@ import { PCA } from '../src/mva/estimators/PCA.js';
 import { KMeans } from '../src/ml/estimators/KMeans.js';
 import { GLM } from '../src/stats/estimators/GLM.js';
 
-let pythonResults;
+// Check Python availability BEFORE test registration
 let pythonAvailable = false;
+let pythonResults = null;
 
-beforeAll(() => {
-  // Check if Python and required packages are available
+try {
+  // Check if python3 is available
+  execSync('python3 --version', { stdio: 'pipe' });
+  // Check if required packages are installed
+  execSync('python3 -c "import sklearn; import scipy; import numpy"', { stdio: 'pipe' });
+  pythonAvailable = true;
+} catch {
+  console.warn('⚠ Python comparison tests will be skipped: Python 3 with sklearn/scipy not available');
+  console.warn('  Install with: pip3 install scikit-learn scipy numpy');
+}
+
+beforeAll(async () => {
+  if (!pythonAvailable) return;
+  
   try {
-    // First check if python3 is available
-    execSync('python3 --version', { stdio: 'pipe' });
-    
-    // Check if required packages are installed
-    execSync('python3 -c "import sklearn; import scipy; import numpy"', { stdio: 'pipe' });
-    
     console.log('Running Python comparison script...');
     execSync('python3 tests/compare_with_python.py', { stdio: 'inherit' });
     pythonResults = JSON.parse(
       readFileSync('/tmp/python_comparison_results.json', 'utf-8')
     );
     console.log('✓ Python reference results loaded');
-    pythonAvailable = true;
   } catch (error) {
-    console.warn('⚠ Python comparison tests skipped: Python 3 with sklearn/scipy not available');
-    console.warn('  Install with: pip3 install scikit-learn scipy numpy');
+    console.error('Failed to run Python comparison script:', error.message);
     pythonAvailable = false;
   }
 });
